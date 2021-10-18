@@ -21,7 +21,7 @@ def ComGen_valid(valid_iter, model, tokenizer, args):
     for item in valid_iter:
         logit = model(input_ids=item["input_ids"].cuda(), attention_mask=item["attention_mask"].cuda()).logits
         logit = torch.max(F.softmax(logit, dim=-1), dim=-1)[1].cpu()
-        predict = [tokenizer.decode(g) for g in logit]
+        predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in logit]
         predicts.extend(predict)
     save(model, args.model_save, args.step)
     with open(args.model_save + "_epoch{}.txt".format(args.step), "w", encoding="utf-8") as f:

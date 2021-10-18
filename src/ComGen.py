@@ -65,9 +65,9 @@ class Dataset(torch.utils.data.Dataset):
             label_tk = tokenizer(item.target)
             concepts_input_ids, concepts_attention_mask = [], []
             for concepts_tk in concepts_tks:
-                concepts_input_ids.extend(concepts_tk.input_ids)
+                concepts_input_ids.extend([2] + concepts_tk.input_ids[1:])
                 concepts_attention_mask.extend(concepts_tk.attention_mask)
-            self.input_ids.append(up_content_tk.input_ids + concepts_input_ids + dn_content_tk.input_ids)
+            self.input_ids.append(up_content_tk.input_ids + concepts_input_ids + [2] + dn_content_tk.input_ids[1:])
             self.attention_mask.append(up_content_tk.attention_mask + concepts_attention_mask + dn_content_tk.attention_mask)
             self.label.append(label_tk.input_ids)
 
@@ -149,9 +149,11 @@ def prepare_Examples(path):
         item = item.strip().split("\t")
         add_Example = Example()
         # utils.debug("item", item)
-        add_Example.add(up_contents=item[0], dn_contents=item[1], target=item[2], concepts=item[3].split(","))
-        # utils.debug("target", add_Example.target)
-        # utils.debug("concepts", add_Example.concepts)
+        if len(item[3]) == 0:
+            continue
+        add_Example.add(up_contents=item[1].replace('"', ""), dn_contents=item[2].replace('"', ""), target=item[4].replace('"', ""), concepts=item[3].split(","))
+        utils.debug("target", add_Example.target)
+        utils.debug("concepts", add_Example.concepts)
         Examples.append(add_Example)
     return Examples
 
@@ -163,8 +165,8 @@ def main(args):
     test_Examples = prepare_Examples(args.test_path)
     if args.mini_test:
         train_Examples = train_Examples[:100]
-        valid_Examples = valid_Examples[:100]
-        test_Examples = test_Examples[:100]
+        # valid_Examples = valid_Examples[:100]
+        # test_Examples = test_Examples[:100]
     logging.info("Finish read data")
     tokenizer = AutoTokenizer.from_pretrained(args.pretrain_cp)
     train_dataset = Dataset(train_Examples, tokenizer)
