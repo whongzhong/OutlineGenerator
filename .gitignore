@@ -1,4 +1,6 @@
 /test
 /log
 /data
-
+/model
+*/__pycache__
+*/__init__*

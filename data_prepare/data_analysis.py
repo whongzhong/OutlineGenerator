@@ -4,24 +4,11 @@ import logging
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
+from utils import *
 logging.getLogger().setLevel(logging.INFO)
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_path", type=str, default="/Users/zhanglingyuan/opt/tiger/polish/data/Gutenberg.txt")
 parser.add_argument("--savefig_path", type=str, default="/Users/zhanglingyuan/opt/tiger/polish/log/pictures")
-
-
-def read_from_file(path):
-    with open(path, "r", encoding="utf-8") as file:
-        pages = file.readlines()
-    for i in range(len(pages)):
-        pages[i] = pages[i].strip().split(" ")
-    return pages
-
-
-def judge_sentence(word):
-    if word == "." or word == "!" or word == "?":
-        return True
-    return False
 
 
 def count_sentence(paragragh):
@@ -56,6 +43,7 @@ def analysis_data(pages, args):
 
 
 def draw_analysis(analysis, args):
+    prefix = args.data_path.split("/")[-1].split(".")[0] + "_"
     word_counts_bins = np.arange(50, 450, 20)
     sentence_counts_bins = np.arange(1, 15, 1)
     sentence_word_counts_bins = np.arange(0, 200, 10)
@@ -63,18 +51,18 @@ def draw_analysis(analysis, args):
     plt.xlabel("Word Counts")
     plt.ylabel("Count")
     plt.title("Word Counts Hist")
-    plt.savefig("/".join([args.savefig_path, "word_counts.png"]))
+    plt.savefig("/".join([args.savefig_path, prefix + "word_counts.png"]))
     plt.cla()
     plt.hist(np.array(analysis["sentence_counts"]), bins=sentence_counts_bins)
     plt.xlabel("Sentence Counts")
     plt.ylabel("Count")
     plt.title("Sentence Counts Hist")
-    plt.savefig("/".join([args.savefig_path, "sentence_counts.png"]))
+    plt.savefig("/".join([args.savefig_path, prefix + "sentence_counts.png"]))
     plt.cla()
     plt.hist(np.array(analysis["sentence_word_counts"]), bins=sentence_word_counts_bins)
     plt.xlabel("Sentence Word Count")
     plt.ylabel("Count")
-    plt.savefig("/".join([args.savefig_path, "sentece_word_counts.png"]))
+    plt.savefig("/".join([args.savefig_path, prefix + "sentece_word_counts.png"]))
     plt.cla()
     logging.info("paragragh_count: {}k.".format(analysis["paragragh_count"] // 1000))
 
