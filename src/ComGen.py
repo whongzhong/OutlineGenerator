@@ -11,6 +11,7 @@ import train
 from transformers import AutoTokenizer, BartForConditionalGeneration
 import csv
 from tqdm import tqdm
+import pandas
 logging.getLogger().setLevel(logging.INFO)
 seed = 19980917
 random.seed(seed)
@@ -118,26 +119,29 @@ def draw_data(path, Examples):
 
 
 def build_data(path, args):
-    data = utils.read_data(path)
-    Examples = []
-    nlp = stanza.Pipeline("en")
-    logging.info("len: {}".format(len(data)))
-    for idx, item in enumerate(data):
-        # logging.info("ids: {}".format(idx))
-        utils.debug("ids", idx)
-        if idx > 0:
-            item = item.strip().split(",")
-            Examples.append(Example(item[2:]))
-            Examples[-1].build_concep(nlp)
-    random.shuffle(Examples)
-    train_Examples = Examples[:int(len(Examples) * 0.9)]
-    valid_Examples = Examples[int(len(Examples) * 0.9):int(len(Examples) * 0.95)]
-    test_Examples = Examples[int(len(Examples) * 0.95):]
-    draw_data(args.train_save, train_Examples)
-    draw_data(args.valid_save, valid_Examples)
-    draw_data(args.test_save, test_Examples)
-    # tokenizer = AutoTokenizer(args.pre_train)
-    # train_dataset = Dataset(train_Examples)
+    with open(path, "r", encoding="utf-8") as f:
+        data = csv.reader(f)
+        Examples = []
+        nlp = stanza.Pipeline("en")
+        # logging.info("len: {}".format(len(data)))
+        for idx, item in enumerate(data):
+            # logging.info("ids: {}".format(idx))
+            # utils.debug("item", item)
+            logging.info("idx:{}".format(idx))
+            if idx > 0:
+                # item = item.strip().split(",")
+                Examples.append(Example(item[2:]))
+                Examples[-1].build_concep(nlp)
+        random.shuffle(Examples)
+        train_Examples = Examples[:int(len(Examples) * 0.9)]
+        valid_Examples = Examples[int(len(Examples) * 0.9):int(len(Examples) * 0.95)]
+        test_Examples = Examples[int(len(Examples) * 0.95):]
+        draw_data(args.train_save, train_Examples)
+        draw_data(args.valid_save, valid_Examples)
+        draw_data(args.test_save, test_Examples)
+        # tokenizer = AutoTokenizer(args.pre_train)
+        # train_dataset = Dataset(train_Examples)
+    logging.info("END")
 
 
 def prepare_Examples(path):

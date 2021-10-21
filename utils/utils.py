@@ -3,7 +3,7 @@ import nltk
 import pandas as pd
 import numpy as np
 import random
-
+import torch
 
 def getlen(str):
     cnt = 0
@@ -122,3 +122,10 @@ def d2s(dt, time=False):
         return dt.strftime("%Y_%m_%d")
     else:
         return dt.strftime("%Y_%m_%d_%H_%M")
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed) #为CPU设置种子用于生成随机数，以使得结果是确定的
+    torch.cuda.manual_seed(seed) #为当前GPU设置随机种子
