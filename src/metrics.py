@@ -6,6 +6,7 @@ import re
 import math
 import nltk
 import argparse
+import eval
 
 from scipy.stats import kendalltau 
 from tqdm import tqdm
@@ -121,3 +122,28 @@ def clean_output(gold, predictions):
 
 def acc_compare(gold, predict):
     return np.sum((np.array(gold) == np.array(predict)))
+
+
+def base_compare(gold, predict, outline):
+    ipt = ["#".join(g) for g in outline]
+    truth = gold
+    pred = predict
+
+    kw2id = []
+    for i1, t1 in zip(ipt, truth):
+        kw_list = i1.strip().split("#")
+        pos = [t1.strip().find(kw.strip()) for kw in kw_list]
+
+        idlist = list(range(len(pos)))
+        orderlist = sorted(idlist, key=lambda x: pos[x])
+        kw2id.append({})
+        for idl, ord in zip(idlist, orderlist):
+            kw2id[-1][kw_list[ord]] = idl
+
+
+    eval_data = [{"reference": eval.proline(g), "candidate": eval.proline(p)} for g, p in zip(gold, predict)]
+    res = eval.bleu(eval_data)
+    res.update(eval.repetition_distinct(eval_data))
+    res.update(eval.rouge(ipt=ipt, cand=pred))
+    res.update(eval.order(ipt=ipt, cand=pred, kw2id=kw2id))
+    return res

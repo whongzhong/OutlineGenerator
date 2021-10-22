@@ -167,4 +167,84 @@ def Order_train(train_iter, valid_iter, model, tokenizer, args):
             Order_valid(valid_iter, model, tokenizer, args)
 
 
-def Base
+def Base_valid(valid_iter, model, tokenizer, args):
+    model.eval()
+    predicts = []
+    for item in valid_iter:
+        if args.n_gpu > 1:
+            logit = model.module.generate(item["input_ids"].cuda(), top_p=0.9, min_length=200, max_length=388, early_stopping=True, no_repeat_ngram_size=4)
+        else:
+            logit = model.generate(item["input_ids"].cuda(), top_p=0.9, min_length=200, max_length=388, early_stopping=True, no_repeat_ngram_size=4)
+        # logit = model(input_ids=item["input_ids"].cuda(), attention_mask=item["attention_mask"].cuda()).logits
+        # logit = torch.max(F.softmax(logit, dim=-1), dim=-1)[1].cpu()
+        predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
+        # utils.debug("predict", predict[0])
+        predicts.extend(predict)
+    logging.info("Metrics Compare")
+    res = metrics.base_compare(args.gold, predicts, args.outline)
+    for k, v in res.items():
+        logging.info("{}: {:.4f}".format(k, v))
+    save(model, args.model_save, args.step)
+    with open(args.model_save + f"_epoch{args.step}.txt", "w", encoding="utf-8") as f:
+        for i in range(len(predicts)):
+            f.write("outline: " + utils.list2str(args.outline[i]) + "\n")
+            f.write("gold:\n")
+            f.write(args.gold[i]+"\n")
+            f.write("predict:\n")
+            f.write(predicts[i]+"\n")
+            f.write("-----------------------------------------------\n")
+        for k, v in res.items():
+            f.write("{} : {:.4f}\n".format(k, v))
+
+
+def Base_train(train_iter, valid_iter, model, tokenizer, args):
+    no_decay = ["bias", "LayerNorm.weight"]
+    high_lr = ["lm_head"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if not any(nd in n for nd in no_decay) and not any(nd in n for nd in high_lr)
+            ],
+            "weight_decay": args.weight_decay,
+            "lr": args.learning_rate * 0.1,
+        },
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+            "lr": args.learning_rate * 0.1,
+        },
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if any(nd in n for nd in high_lr)
+            ],
+            "weight_decay": args.weight_decay,
+        },
+    ]
+    optimizer = AdamW(optimizer_grouped_parameters, args.learning_rate, correct_bias=False)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter), num_training_steps=len(train_iter) * args.epoch)
+    mean_loss = 0
+    for step in range(args.epoch):
+        model.train()
+        logging.info("Starting Training epoch:{}".format(step+1))
+        for item in train_iter:
+            loss = model(input_ids=item["input_ids"].cuda(), attention_mask=item["input_mask"].cuda(), labels=item["output_ids"].cuda()).loss
+            optimizer.zero_grad()
+            if args.n_gpu > 1:
+                loss = torch.mean(loss)
+            loss.backward()
+            mean_loss += loss.cpu().item()
+            optimizer.step()
+            scheduler.step()
+        args.step = step + 1
+        mean_loss /= len(train_iter)
+        logging.info("Train loss:{:.4f}".format(mean_loss))
+        mean_loss = 0
+        Base_valid(valid_iter, model, tokenizer, args)

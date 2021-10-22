@@ -113,7 +113,7 @@ def list2str(list):
     res = ""
     for item in list:
         res += str(item)
-        res += ","
+        res += ", "
     return res[:-1]
 
 
