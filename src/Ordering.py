@@ -15,7 +15,7 @@ logging.getLogger().setLevel(logging.INFO)
 
 
 class Raw_Example(object):
-    def __init__(self, story, outline, title):
+    def __init__(self, story, outline, title=""):
         self.story = story
         self.outline = outline
         self.title = title
@@ -140,7 +140,7 @@ def write_json(data ,path):
             out = {
                 "outline": item.outline,
                 "order": item.order,
-                "title": item.title
+                "story": item.story,
             }
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
 
@@ -149,12 +149,12 @@ def build_order(data):
     raw_examples = []
     logging.info(f"dataset len :{len(data)}")
     for idx, item in enumerate(data):
-        utils.debug("story", item["story"])
-        utils.debug("outline", item["outline"])
-        utils.debug("title", item["title"])
+        # utils.debug("story", item["story"])
+        # utils.debug("outline", item["outline"])
+        # utils.debug("title", item["title"])
         if idx % 10 == 0:
             logging.info(f"start build {idx}")
-        raw_examples.append(Raw_Example(item["story"], item["outline"], item["title"]))
+        raw_examples.append(Raw_Example(item["story"], item["outline"]))
         raw_examples[-1].build_order()
     return raw_examples
 

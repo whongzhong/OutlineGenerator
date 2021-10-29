@@ -2,25 +2,21 @@
 source ~/.bashrc
 source activate telma
 export PYTHONPATH="$HOME/opt/tiger/polish"
-export CUDA_VISIBLE_DEVICES="0,1,2,3"
+export CUDA_VISIBLE_DEVICES="0,1,2"
 
-MODEL="Base_BART/LOT"
-# TOKENIZER="fnlp/cpt-large"
+MODEL="Rewrite"
 # TOKENIZER="$HOME/model/bart_zyfeng/bart-zyfeng"
-# TOKENIZER="hfl/chinese-roberta-wwm-ext"
-TOKENIZER="fnlp/bart-large-chinese"
+TOKENIZER="hfl/chinese-roberta-wwm-ext"
+# TOKENIZER="fnlp/bart-large-chinese"
 PRETRAIN="fnlp/bart-large-chinese"
 # PRETRAIN="$HOME/model/bart_zyfeng/bart-zyfeng"
-# PRETRAIN="fnlp/cpt-large"
 
-TRAIN_PATH="$HOME/Datasets/chinese_tonghua/chinese_tonghua_etstory_clean_2_outline_2.jsonl"
-# TRAIN_PATH="$HOME/Datasets/LOT/data/train.jsonl"
-
-python ../src/Base.py \
+python ../src/Rewrite.py \
 --train \
---train_path="$TRAIN_PATH" \
+--train_path="$HOME/Datasets/chinese_tonghua/chinese_tonghua_etstory_clean_2_outline_2.jsonl" \
 --valid_path="$HOME/Datasets/LOT/data/val.jsonl" \
 --tokenizer_path="$TOKENIZER" \
+--tokenizer_save="$HOME/opt/tiger/polish/model/$MODEL/tokenizer" \
 --pretrain_path="$PRETRAIN" \
 --model_save="$HOME/opt/tiger/polish/model/$MODEL" \
 --learning_rate=0.00003 \

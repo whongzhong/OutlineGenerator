@@ -147,3 +147,18 @@ def base_compare(gold, predict, outline):
     res.update(eval.rouge(ipt=ipt, cand=pred))
     res.update(eval.order(ipt=ipt, cand=pred, kw2id=kw2id))
     return res
+
+
+def overall_compare(res):
+    small = [26.58, 16.04, 17.90, 31.38, 83.64, 63.15]
+    true = [100, 100, 23.47, 42.17, 100, 100]
+    predict = [res["bleu-1"], res["bleu-2"], res["distinct-3"], res["distinct-4"], res["coverage"], res["order"]]
+    sum = 0
+    wi = []
+    for a, b in zip(true, small):
+        wi.append(a / b)
+        sum += a / b
+    overall = 0
+    for a, w in zip(predict, wi):
+        overall += a * (w / sum)
+    return overall

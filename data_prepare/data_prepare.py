@@ -8,6 +8,8 @@ from utils import *
 import pandas as pd
 import numpy as np
 import json
+import re
+import rake
 logging.getLogger().setLevel(logging.INFO)
 parser = argparse.ArgumentParser()
 parser.add_argument("--dir_path", type=str, default="/Users/zhanglingyuan/Datasets/Gutenberg/txt")
@@ -124,6 +126,66 @@ def prepare_bookcroups_rawdata(args):
                 logging.warn("e:{}".format(e))
 
 
+def pos_find(story, pos):
+    while pos >=0:
+        if story[pos] == "。" or story[pos] == "！" or story[pos] == "”" or story[pos] == "？" \
+            or story[pos] == "?" or story[pos] == "!":
+            return pos + 1
+        pos -= 1
+
+
+def clean(s):
+    s = re.sub(r"\_.*\_", "", s.replace("◇", "_"))
+    s = re.sub(r"\(.*\)", "", s.replace("_", ""))
+    s = re.sub(r"（.*）", "", s)
+    s = re.sub(r"．．．．．．", "。", s)
+    s = re.sub(r"\.\.\.\.\.\.", "", s)
+    s = s.replace("\xa0", "").replace("/", "").replace(" ", "")
+    s = s.replace("\\", "")
+    return s
+
+
+def prepare_chinese_tonghua_rawdata(args):
+    raw_data = read_data(args.rawdata_path)
+    data = []
+    for item in raw_data:
+        item = json.loads(item)
+        item["title"] = clean(item["title"])
+        item["story"] = clean(item["story"])
+        if "作者" in item["story"] or "转载" in item["story"] or "版权" in item["story"] or "www" in item["story"] or "简介" in item["story"]:
+            continue
+        if '"' in item["story"] or '”' in item["story"] or '“' in item["story"]:
+            continue
+        if len(item["story"]) <= 90:
+            continue
+        if len(item["story"]) >= args.max_length:
+            pos = pos_find(item["story"], args.max_length - 1)
+            item["story"] = item["story"][:pos]
+        data.append(item)
+    with open(args.save_path, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item, ensure_ascii=False)+"\n")
+
+
+def prepare_rake_rawdata(args):
+    raw_data =read_data(args.rawdata_path)
+    data = []
+    for item in raw_data:
+        try:
+            item = json.loads(item)
+            story = item["story"]
+            result = rake.run(story)
+            res = [k for k, _ in result]
+            res = res[:min(len(res), 8)]
+            item["outline"] = res
+            data.append(item)
+        except:
+            continue
+    with open(args.save_path, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item, ensure_ascii=False)+"\n")
+
+
 def prepare_rawdata(args):
     if args.cropus_type == "Brown":
         prepare_Brown_rawdata(args)
@@ -131,6 +193,10 @@ def prepare_rawdata(args):
         prepare_Gutenberg_rawdata(args)
     elif args.cropus_type == "bookcroups":
         prepare_bookcroups_rawdata(args)
+    elif args.cropus_type == "chinese_tonghua":
+        prepare_chinese_tonghua_rawdata(args)
+    elif args.cropus_type == "rake":
+        prepare_rake_rawdata(args)
 
 
 def prepare_minidata(args):

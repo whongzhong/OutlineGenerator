@@ -36,7 +36,7 @@ def Ordering_config():
     parser.add_argument("--valid_path", type=str)
     parser.add_argument("--test_path", type=str)
     parser.add_argument("--model_save", type=str)
-    # Prepare data
+    # Prepare data config
     parser.add_argument("--build_data", action="store_true")
     parser.add_argument("--train_save", type=str)
     parser.add_argument("--valid_save", type=str)
@@ -63,7 +63,7 @@ def Base_config():
     parser.add_argument("--valid_path", type=str)
     parser.add_argument("--test_path", type=str)
     parser.add_argument("--model_save", type=str)
-    # Prepare data
+    # Prepare data config
     parser.add_argument("--build_data", action="store_true")
     parser.add_argument("--train_save", type=str)
     parser.add_argument("--valid_save", type=str)
@@ -90,6 +90,40 @@ def Rewrite_config():
     parser.add_argument("--valid_path", type=str)
     parser.add_argument("--test_path", type=str)
     parser.add_argument("--model_save", type=str)
+    parser.add_argument("--tokenizer_save", type=str)
+    # Training config
+    parser.add_argument("--train", action="store_true")
+    parser.add_argument("--epoch", type=int, default=10)
+    parser.add_argument("--learning_rate", type=float, default=0.000003)
+    parser.add_argument("--weight_decay", type=float, default=0.0001)
+    parser.add_argument("--fix_length", type=int, default=1024)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--tokenizer_path", type=str)
+    parser.add_argument("--pretrain_path", type=str)
+    # Rewrite config
+    parser.add_argument("--rewrite", action="store_true")
+    parser.add_argument("--model_path", type=str)
+    parser.add_argument("--rewrite_path", type=str)
+    parser.add_argument("--rewrite_save", type=str)
+
+
+    args = parser.parse_args()
+
+    return args
+
+
+def OrderBase_config():
+    parser = argparse.ArgumentParser()
+    # OS config
+    parser.add_argument("--train_path", type=str)
+    parser.add_argument("--valid_path", type=str)
+    parser.add_argument("--test_path", type=str)
+    parser.add_argument("--model_save", type=str)
+    # Prepare data config
+    parser.add_argument("--build_data", action="store_true")
+    parser.add_argument("--train_save", type=str)
+    parser.add_argument("--valid_save", type=str)
+    parser.add_argument("--test_save", type=str)
     # Training config
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--epoch", type=int, default=10)
@@ -101,5 +135,5 @@ def Rewrite_config():
     parser.add_argument("--pretrain_path", type=str)
 
     args = parser.parse_args()
-
+    
     return args

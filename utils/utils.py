@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import random
 import torch
+import re
+
 
 def getlen(str):
     cnt = 0
@@ -129,3 +131,38 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed) #为CPU设置种子用于生成随机数，以使得结果是确定的
     torch.cuda.manual_seed(seed) #为当前GPU设置随机种子
+
+
+def sentence_cut(text):
+    text = re.sub('([\.。！？\?])([^’”])',r'\1\n\2',text)#普通断句符号且后面没有引号
+    text = re.sub('(\.{6})([^’”])',r'\1\n\2',text)#英文省略号且后面没有引号
+    text = re.sub('(\…{2})([^’”])',r'\1\n\2',text)#中文省略号且后面没有引号
+    text = re.sub('([.。！？\?\.{6}\…{2}][’”])([^’”])',r'\1\n\2',text)#断句号+引号且后面没有引号
+    text = text.rstrip()    # 去掉段尾的\n，然后
+    return text.split("\n")
+
+
+def reorder(sentence, outline):
+    if len(outline) == 0:
+        return outline
+    order = [-1] * len(outline)
+    cnt = 0
+    for i in range(len(sentence)):
+        for pos, word in enumerate(outline):
+            if i - len(word) + 1 < 0:
+                continue
+            if order[pos] != -1:
+                continue
+            if sentence[i - len(word) + 1: i + 1] == word:
+                order[pos] = cnt
+                cnt += 1
+    assert cnt == len(outline)
+    reoutline = [outline[idx] for idx in order]
+    return reoutline
+
+
+def cat(sentences):
+    sentence = ""
+    for item in sentences:
+        sentence += item
+    return sentence
