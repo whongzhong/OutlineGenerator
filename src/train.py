@@ -6,6 +6,7 @@ import logging
 from utils import utils
 import metrics
 import math
+import json
 
 
 def save(model, path, step):
@@ -17,13 +18,14 @@ def save(model, path, step):
     torch.save(model, path)
 
 
-def draw(f, outline, gold, predict):
-    f.write("outline: " + utils.list2str(outline) + "\n")
-    f.write("gold:\n")
-    f.write(gold+"\n")
-    f.write("predict:\n")
-    f.write(predict +"\n")
-    f.write("-----------------------------------------------\n")
+def draw(f, mp):
+    f.write(json.dumps(mp, ensure_ascii=False)+"\n")
+    # f.write("outline: " + utils.list2str(outline) + "\n")
+    # f.write("gold:\n")
+    # f.write(gold+"\n")
+    # f.write("predict:\n")
+    # f.write(predict +"\n")
+    # f.write("-----------------------------------------------\n")
 
 
 def ComGen_valid(valid_iter, model, tokenizer, args):
@@ -181,9 +183,9 @@ def Base_valid(valid_iter, model, tokenizer, args):
     predicts = []
     for item in valid_iter:
         if args.n_gpu > 1:
-            logit = model.module.generate(item["input_ids"].cuda(), do_sample=True, min_length=200, max_length=500, early_stopping=True)
+            logit = model.module.generate(item["input_ids"].cuda(), top_p=0.9, min_length=200, max_length=512)
         else:
-            logit = model.generate(item["input_ids"].cuda(), do_sample=True, min_length=200, max_length=500, early_stopping=True)
+            logit = model.generate(item["input_ids"].cuda(), top_p=0.9, min_length=200, max_length=512)
         # logit = model(input_ids=item["input_ids"].cuda(), attention_mask=item["attention_mask"].cuda()).logits
         # logit = torch.max(F.softmax(logit, dim=-1), dim=-1)[1].cpu()
         predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
@@ -198,14 +200,22 @@ def Base_valid(valid_iter, model, tokenizer, args):
     save(model, args.model_save, args.step)
     with open(args.model_save + f"_epoch{args.step}.txt", "w", encoding="utf-8") as f:
         for i in range(len(predicts)):
-            f.write("outline: " + utils.list2str(args.outline[i]) + "\n")
-            f.write("gold:\n")
-            f.write(args.gold[i]+"\n")
-            f.write("predict:\n")
-            f.write(predicts[i]+"\n")
-            f.write("-----------------------------------------------\n")
-        for k, v in res.items():
-            f.write("{} : {:.4f}\n".format(k, v))
+            f.write(predicts[i].strip()+"\n")
+    with open(args.model_save + f"_epoch{args.step}.jsonl", "w", encoding="utf-8") as f:
+        for i in range(len(predicts)):
+            mp = {
+                "outline": args.outline[i],
+                "gold": args.gold[i],
+                "predicts": predicts[i]
+            }
+            draw(f, mp)
+            # f.write("outline: " + utils.list2str(args.outline[i]) + "\n")
+            # f.write("gold:\n")
+            # f.write(args.gold[i]+"\n")
+            # f.write("predict:\n")
+            # f.write(predicts[i]+"\n")
+            # f.write("-----------------------------------------------\n")
+        draw(f, res)
 
 
 def Base_train(train_iter, valid_iter, model, tokenizer, args):
@@ -240,7 +250,7 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
         },
     ]
     optimizer = AdamW(optimizer_grouped_parameters, args.learning_rate, correct_bias=False)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // 16, num_training_steps=len(train_iter) * args.epoch // 16)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
     mean_loss = 0
     for step in range(args.epoch):
         model.train()
@@ -251,7 +261,7 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
                 loss = torch.mean(loss)
             loss.backward()
             mean_loss += loss.cpu().item()
-            if idx % 16 == 15:
+            if idx % args.opt_step == args.opt_step - 1:
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
@@ -460,18 +470,25 @@ def OrderBase_train(train_iter, valid_iter, model, tokenizer, args):
         },
     ]
     optimizer = AdamW(optimizer_grouped_parameters, args.learning_rate, correct_bias=False)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // 16, num_training_steps=len(train_iter) * args.epoch // 16)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
     mean_loss = 0
     for step in range(args.epoch):
         model.train()
         logging.info("Starting Training epoch:{}".format(step+1))
         for idx, item in enumerate(train_iter):
-            loss = model(input_ids=item["input_ids"].cuda(), attention_mask=item["input_mask"].cuda(), labels=item["output_ids"].cuda()).loss
+            output = model(input_ids=item["input_ids"].cuda(), attention_mask=item["input_mask"].cuda(), labels=item["output_ids"].cuda(), \
+                encoder_labels=item["encoder_labels"].cuda(), encoder_labels_idx=item["encoder_labels_idx"])
+            loss = output.loss
+            encoder_loss = output.encoder_loss
+            utils.debug("loss", loss)
+            utils.debug("encoder_loss", encoder_loss)
             if args.n_gpu > 1:
                 loss = torch.mean(loss)
+                encoder_loss = torch.mean(encoder_loss)
+            loss = loss + args.encoder_loss_p * encoder_loss
             loss.backward()
             mean_loss += loss.cpu().item()
-            if idx % 16 == 15:
+            if idx % args.opt_step == args.opt_step - 1:
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()

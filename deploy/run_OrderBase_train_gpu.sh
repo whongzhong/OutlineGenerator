@@ -4,7 +4,7 @@ source activate telma
 export PYTHONPATH="$HOME/opt/tiger/polish"
 export CUDA_VISIBLE_DEVICES="0,1,2,3"
 
-MODEL="Base_BART/LOT"
+MODEL="Base_BART"
 # TOKENIZER="fnlp/cpt-large"
 # TOKENIZER="$HOME/model/bart_zyfeng/bart-zyfeng"
 # TOKENIZER="hfl/chinese-roberta-wwm-ext"
@@ -14,9 +14,9 @@ PRETRAIN="fnlp/bart-large-chinese"
 # PRETRAIN="fnlp/cpt-large"
 
 # TRAIN_PATH="$HOME/Datasets/chinese_tonghua/chinese_tonghua_etstory_clean_2_outline_2.jsonl"
-TRAIN_PATH="$HOME/Datasets/LOT/data/train.jsonl"
+TRAIN_PATH="$HOME/Datasets/LOT/data/train_order.jsonl"
 
-python ../src/Base.py \
+python ../src/OrderBase.py \
 --train \
 --train_path="$TRAIN_PATH" \
 --valid_path="$HOME/Datasets/LOT/data/val.jsonl" \
@@ -24,7 +24,7 @@ python ../src/Base.py \
 --pretrain_path="$PRETRAIN" \
 --model_save="$HOME/opt/tiger/polish/model/$MODEL" \
 --learning_rate=0.00003 \
---batch_size=8 \
---epoch=30 \
---opt_step=2 \
-# > ../log/Base.log 2>&1 &
+--batch_size=3 \
+--epoch=40 \
+--opt_step=16 \
+# > ../log/OrderBase.log 2>&1 &

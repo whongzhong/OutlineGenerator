@@ -77,6 +77,7 @@ def Base_config():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--tokenizer_path", type=str)
     parser.add_argument("--pretrain_path", type=str)
+    parser.add_argument("--opt_step", type=int, default=1)
 
     args = parser.parse_args()
     
@@ -133,6 +134,8 @@ def OrderBase_config():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--tokenizer_path", type=str)
     parser.add_argument("--pretrain_path", type=str)
+    parser.add_argument("--opt_step", type=int, default=1)
+    parser.add_argument("--encoder_loss_p", type=float, default=1.0)
 
     args = parser.parse_args()
     

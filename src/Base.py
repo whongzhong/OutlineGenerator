@@ -12,7 +12,7 @@ import metrics
 import eval
 import random
 import datetime
-logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().setLevel(logging.DEBUG)
 
 
 class Example(object):
@@ -136,21 +136,27 @@ def main(args):
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
-    model = BartForConditionalGeneration.from_pretrained(args.pretrain_path)
+    if args.model_load:
+        model = torch.load(args.model_load)
+    else:
+        model = BartForConditionalGeneration.from_pretrained(args.pretrain_path)
+    utils.debug("model", model)
     # model = CPTForConditionalGeneration.from_pretrained(args.pretrain_path)
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
-    special_token = {"additional_special_tokens": ["[titile]"] + ["[eos]"] + ["[bos]"] + ["[word]"] + ["<w>"]}
+    special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"]}
     tokenizer.add_special_tokens(special_token)
     tokenizer.pad_token = "[PAD]"
     tokenizer.eos_token = "[SEP]"
     tokenizer.bos_token = "[CLS]"
     # tokenizer.eos_token = "[eos]"
     # tokenizer.bos_token = "[bos]"
-    # model.config.decoder_start_token_id = tokenizer.bos_token_id
-    # model.config.eos_token_id = tokenizer.eos_token_id
-    # model.config.bos_token_id = tokenizer.bos_token_id
-    # model.config.forced_eos_token_id = tokenizer.eos_token_id
+    model.config.decoder_start_token_id = tokenizer.eos_token_id
+    model.config.eos_token_id = tokenizer.eos_token_id
+    model.config.bos_token_id = tokenizer.bos_token_id
+    model.config.forced_eos_token_id = tokenizer.eos_token_id
     model.resize_token_embeddings(len(tokenizer))
+    logging.info(f"eos_token_id:{model.config.eos_token_id}")
+    logging.info(f"bos_token_id:{model.config.bos_token_id}")
     logging.info(f"gpu num:{args.n_gpu}")
     if args.n_gpu > 1:
         model = torch.nn.DataParallel(model).cuda()
@@ -161,8 +167,9 @@ def main(args):
     train_dataset = BaseDataset(train_data, tokenizer)
     valid_dataset = BaseDataset(valid_data, tokenizer)
     # test_dataset = BaseDataset(test_data, tokenizer)
+    # train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
-    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=3, collate_fn=Collection(args))
+    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")
     Base_train(train_iter, valid_iter, model, tokenizer, args)
@@ -173,3 +180,5 @@ if __name__ == "__main__":
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)
+    if args.test:
+        

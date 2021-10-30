@@ -137,6 +137,7 @@ def pos_find(story, pos):
 def clean(s):
     s = re.sub(r"\_.*\_", "", s.replace("◇", "_"))
     s = re.sub(r"\(.*\)", "", s.replace("_", ""))
+    s = re.sub(r"\[.*\]", "", s)
     s = re.sub(r"（.*）", "", s)
     s = re.sub(r"．．．．．．", "。", s)
     s = re.sub(r"\.\.\.\.\.\.", "", s)
@@ -154,8 +155,8 @@ def prepare_chinese_tonghua_rawdata(args):
         item["story"] = clean(item["story"])
         if "作者" in item["story"] or "转载" in item["story"] or "版权" in item["story"] or "www" in item["story"] or "简介" in item["story"]:
             continue
-        if '"' in item["story"] or '”' in item["story"] or '“' in item["story"]:
-            continue
+        # if '"' in item["story"] or '”' in item["story"] or '“' in item["story"]:
+        #     continue
         if len(item["story"]) <= 90:
             continue
         if len(item["story"]) >= args.max_length:

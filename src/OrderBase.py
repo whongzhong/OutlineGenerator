@@ -80,7 +80,7 @@ class BaseDataset(torch.utils.data.Dataset):
             for i in range(len(word_label_idx)):
                 for j in range(i+1, len(word_label_idx)):
                     encoder_labels_idx.append((word_label_idx[i], word_label_idx[j]))
-                    encoder_labels.append(1 if self.order[i]<self.order[j] else 0)
+                    encoder_labels.append(1 if item.order[i]<item.order[j] else 0)
             encoder_labels_mask = [1] * len(encoder_labels)
             self.input_ids.append(input_ids)
             self.input_mask.append(input_mask)
@@ -122,7 +122,7 @@ class Collection(object):
             "output_ids": [],
             "output_mask": [],
             "encoder_labels": [],
-            "encoder_labels_ids": [],
+            "encoder_labels_idx": [],
             "encoder_labels_mask": []
         }
         for mini_batch in batch:
@@ -136,7 +136,7 @@ class Collection(object):
                 input_max_pad = max(input_max_pad, len(p))
             for p in out["output_ids"]:
                 output_max_pad = max(output_max_pad, len(p))
-            for p in out["encoder_lables_ids"]:
+            for p in out["encoder_labels"]:
                 encoder_max_pad = max(encoder_max_pad, len(p))
         else:
             input_max_pad = self.config["FIX_LENGTH"]
@@ -148,7 +148,7 @@ class Collection(object):
             out["output_ids"][i] = out["output_ids"][i] + [-100] * (output_max_pad - len(out["output_ids"][i]))
             out["output_mask"][i] = out["output_mask"][i] + [0] * (output_max_pad - len(out["output_mask"][i]))
             out["encoder_labels"][i] = out["encoder_labels"][i] + [-100] * (encoder_max_pad - len(out["encoder_labels"][i]))
-            out["encoder_labels_ids"][i] = out["encoder_labels_ids"][i] + [(-1, -1)] * (encoder_max_pad - len(out["encoder_labels_ids"][i]))
+            out["encoder_labels_idx"][i] = out["encoder_labels_idx"][i] + [(-1, -1)] * (encoder_max_pad - len(out["encoder_labels_idx"][i]))
             out["encoder_labels_mask"][i] = out["encoder_labels_mask"][i] + [0] * (encoder_max_pad - len(out["encoder_labels_mask"][i]))
         out["input_ids"] = torch.tensor(out["input_ids"], dtype=torch.long)
         out["input_mask"] = torch.tensor(out["input_mask"], dtype=torch.long)
@@ -181,8 +181,8 @@ def prepare_examples(path, is_train=True):
 
 def main(args):
     logging.info("Load Data")
-    train_data = prepare_examples(args.train_path)
-    valid_data = prepare_examples(args.valid_path)
+    train_data = prepare_examples(args.train_path, True)
+    valid_data = prepare_examples(args.valid_path, False)
     args.gold = []
     args.outline = []
     for item in valid_data:
@@ -195,6 +195,7 @@ def main(args):
     utils.debug("pretrain", args.pretrain_path)
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path)
     model = OrderBartForConditionalGeneration.from_pretrained(args.pretrain_path)
+    utils.debug("model", model)
     special_token = {"additional_special_tokens": ["[titile]"] + ["[eos]"] + ["[bos]"] + ["[word]"]}
     word_token = [f"<w{i}>" for i in range(8)]
     special_token["additional_special_tokens"].extend(word_token)
@@ -214,20 +215,21 @@ def main(args):
         model = torch.nn.DataParallel(model).cuda()
     else:
         model = model.cuda()
+        # model = model.cpu()
     args.pad_id = tokenizer.pad_token_id
     logging.info("Prepare Dataset")
-    train_dataset = BaseDataset(train_data, tokenizer)
-    valid_dataset = BaseDataset(valid_data, tokenizer)
+    train_dataset = BaseDataset(train_data, tokenizer, True)
+    valid_dataset = BaseDataset(valid_data, tokenizer, False)
     # test_dataset = BaseDataset(test_data, tokenizer)
     train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
-    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=3, collate_fn=Collection(args))
+    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")
     OrderBase_train(train_iter, valid_iter, model, tokenizer, args)
     
 
 if __name__ == "__main__":
-    args = Base_config()
+    args = OrderBase_config()
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)

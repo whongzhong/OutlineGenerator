@@ -34,7 +34,7 @@ from transformers.utils import logging
 from transformers import BartConfig
 from transformers import BertModel, BertConfig
 from transformers import BartPretrainedModel, BartModel
-
+from utils import utils
 from torch.nn import LayerNorm
 
 
@@ -56,7 +56,6 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
 class Seq2SeqLMEOutput(ModelOutput):
     encoder_loss: Optional[torch.FloatTensor]
     loss: Optional[torch.FloatTensor]
-    encoder_logits: torch.FloatTensor
     logits: torch.FloatTensor
     decoder_past_key_values: Optional[List[torch.FloatTensor]] = None
     decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
@@ -66,8 +65,9 @@ class Seq2SeqLMEOutput(ModelOutput):
     encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
-class classification_head(nn.modules):
+class classification_head(nn.Module):
     def __init__(self, input_size, in_size, output_size):
+        super(classification_head, self).__init__()
         self.dance = nn.Sequential(
             nn.Dropout(0.3),
             nn.Linear(input_size, in_size),
@@ -76,7 +76,7 @@ class classification_head(nn.modules):
             nn.Linear(in_size, output_size)
         )
     
-    def formard(self, x):
+    def forward(self, x):
         return self.dance(x)
 
 
@@ -89,7 +89,7 @@ class OrderBartForConditionalGeneration(BartPretrainedModel):
         self.model = BartModel(config)
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
         self.lm_head = nn.Linear(config.d_model, self.model.shared.num_embeddings, bias=False)
-        self.classification_head = classification_head(1024, 1024, 2)
+        self.classification_head = classification_head(1024 * 2, 1024, 2)
         self.init_weights()
 
     def get_encoder(self):
@@ -133,7 +133,7 @@ class OrderBartForConditionalGeneration(BartPretrainedModel):
         decoder_inputs_embeds=None,
         labels=None,
         encoder_labels=None,
-        encoder_labels_index=None,
+        encoder_labels_idx=None,
         use_cache=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -177,14 +177,38 @@ class OrderBartForConditionalGeneration(BartPretrainedModel):
         if encoder_labels is not None:
             encoder_last_hidden = outputs.encoder_last_hidden_state
             batch_size, seq_len, hidden = encoder_last_hidden.shape
-            index_list = []
-            for idx, b in enumerate(encoder_labels_index):
+            utils.debug("batch_size", batch_size)
+            utils.debug("seq_len", seq_len)
+            utils.debug("hidden", hidden)
+            index_list_l = []
+            index_list_r = []
+            utils.debug("encoder_labels_idx", encoder_labels_idx)
+            for idx, b in enumerate(encoder_labels_idx):
                 for l, r in b:
-                    index_list.append(l+idx*seq_len)
-                    index_list.append(r+idx*seq_len)
-            index_list = torch.tensor(index_list, dtype=torch.long)
-            encoder_logits = encoder_last_hidden.reshape(batch_size * seq_len, hidden).index_select(index_list, dim=-1).view(-1, 2)
+                    if l == -1:
+                        continue
+                    index_list_l.append(l+idx*seq_len)
+                    index_list_r.append(r+idx*seq_len)
+            index_list_l = torch.tensor(index_list_l).cuda()
+            index_list_r = torch.tensor(index_list_r).cuda()
+            utils.debug("index_list_l shape", index_list_l.shape)
+            utils.debug("index_list_r shape", index_list_r.shape)
+            encoder_hidden = encoder_last_hidden.reshape(batch_size * seq_len, hidden)
+            encoder_hidden_l = torch.index_select(encoder_hidden, 0, index_list_l)
+            encoder_hidden_r = torch.index_select(encoder_hidden, 0, index_list_r)
+            encoder_hidden = torch.cat([encoder_hidden_l, encoder_hidden_r], dim=-1)
+            # utils.debug("encoder_hidden shape", encoder_hidden.shape)
+            encoder_logits = self.classification_head(encoder_hidden)
+            # utils.debug("encoder_logits", encoder_logits)
             loss_fn = CrossEntropyLoss()
+            # utils.debug("encoder_logits shape", encoder_hidden.shape)
+            # utils.debug("encoder_labels", encoder_labels)
+            encoder_labels_mask = (encoder_labels != -100)
+            # utils.debug("encoder_labels_mask", encoder_labels_mask)
+            encoder_labels = torch.masked_select(encoder_labels, encoder_labels_mask)
+            # utils.debug("encoder_labels after", encoder_labels)
+            utils.debug("encoder_logits shape", encoder_logits.shape)
+            utils.debug("encoder_labels shape", encoder_labels.shape)
             encoder_loss = loss_fn(encoder_logits, encoder_labels.view(-1))
 
         masked_lm_loss = None
@@ -199,7 +223,6 @@ class OrderBartForConditionalGeneration(BartPretrainedModel):
         return Seq2SeqLMEOutput(
             encoder_loss=encoder_loss,
             loss=masked_lm_loss,
-            encoder_logits=encoder_logits,
             logits=lm_logits,
             past_key_values=outputs.past_key_values,
             decoder_hidden_states=outputs.decoder_hidden_states,
