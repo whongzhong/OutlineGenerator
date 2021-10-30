@@ -181,4 +181,4 @@ if __name__ == "__main__":
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)
     if args.test:
-        
+        raise
