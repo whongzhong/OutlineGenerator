@@ -80,6 +80,10 @@ def Base_config():
     parser.add_argument("--opt_step", type=int, default=1)
     parser.add_argument("--local_rank", type=int, default=-1)
     parser.add_argument("--model_load", type=str, default=None)
+    # Predict config
+    parser.add_argument("--predict", action="store_true")
+    parser.add_argument("--output", type=str)
+    parser.add_argument("--ans_list", type=str)
     args = parser.parse_args()
     
     return args

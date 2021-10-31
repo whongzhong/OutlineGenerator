@@ -182,6 +182,44 @@ def Order_train(train_iter, valid_iter, model, tokenizer, args):
             Order_valid(valid_iter, model, tokenizer, args)
 
 
+def Base_predict(test_iter, model, tokenizer, args):
+    model.eval()
+    predicts = []
+    for item in test_iter:
+        if args.n_gpu > 1:
+            logit = model.module.generate(item["input_ids"].cuda(), do_sample=True, top_k=0, top_p=0.9, min_length=200, max_length=512)
+        else:
+            logit = model.generate(item["input_ids"].cuda(), do_sample=True, top_k=0, top_p=0.9, min_length=200, max_length=512)
+        predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
+        # utils.debug("predict", predict[0])
+        predicts.extend(predict)
+    logging.info("Metrics Compare")
+    res = metrics.base_compare(args.gold, predicts, args.outline)
+    overall = metrics.overall_compare(res)
+    res["overall"] = overall
+    for k, v in res.items():
+        logging.info("{}: {:.4f}".format(k, v))
+    with open(args.output + ".txt", "w", encoding="utf-8") as f:
+        for i in range(len(predicts)):
+            f.write(predicts[i].strip()+"\n")
+    with open(args.ans_list, "a", encoding="utf-8") as f:
+        # for i in range(len(predicts)):
+        #     mp = {
+        #         "outline": args.outline[i],
+        #         "gold": args.gold[i],
+        #         "predicts": predicts[i]
+        #     }
+        #     draw(f, mp)
+            # f.write("outline: " + utils.list2str(args.outline[i]) + "\n")
+            # f.write("gold:\n")
+            # f.write(args.gold[i]+"\n")
+            # f.write("predict:\n")
+            # f.write(predicts[i]+"\n")
+            # f.write("-----------------------------------------------\n")
+        res["path"] = args.output + ".txt"
+        draw(f, res)
+
+
 def Base_valid(valid_iter, model, tokenizer, args):
     model.eval()
     predict_logits = []

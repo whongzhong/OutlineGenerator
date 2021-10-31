@@ -190,12 +190,47 @@ def main(args):
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")
     Base_train(train_iter, valid_iter, model, tokenizer, args)
-    
+
+
+def predict(args):
+    test_data = prepare_examples(args.test_path)
+    args.gold = []
+    args.outline = []
+    for item in test_data:
+        args.gold.append(item.un_cat_story)
+        args.outline.append(item.outline)
+    # test_data = prepare_examples(args.test_path)
+    logging.info("Init Model and Tokenizer")
+    args.n_gpu = torch.cuda.device_count()
+    utils.debug("tokenizer", args.tokenizer_path)
+    utils.debug("pretrain", args.pretrain_path)
+    tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path)
+    # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
+    model = torch.load(args.model_load).cuda()
+    # utils.debug("model", model)
+    # model = CPTForConditionalGeneration.from_pretrained(args.pretrain_path)
+    # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
+    special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"]}
+    tokenizer.add_special_tokens(special_token)
+    word_token = ["“", "”"]
+    tokenizer.add_tokens(word_token)
+    tokenizer.pad_token = "[PAD]"
+    tokenizer.eos_token = "[SEP]"
+    tokenizer.bos_token = "[CLS]"
+    args.pad_id = tokenizer.pad_token_id
+    test_dataset = BaseDataset(test_data, tokenizer)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
+    logging.info("Start predict")
+    with torch.no_grad():
+        Base_predict(test_iter, model, tokenizer, args)
+
 
 if __name__ == "__main__":
     args = Base_config()
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)
-    if args.test:
-        raise
+    if args.predict:
+        args.output = '/'.join([args.output, utils.d2s(datetime.datetime.now(), time=True)])
+        predict(args)
