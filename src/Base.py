@@ -224,6 +224,7 @@ def predict(args):
     logging.info("Start predict")
     with torch.no_grad():
         Base_predict(test_iter, model, tokenizer, args)
+    logging.info("END")
 
 
 if __name__ == "__main__":
