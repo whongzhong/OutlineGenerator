@@ -13,6 +13,8 @@ import metrics
 import eval
 import random
 import datetime
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 logging.getLogger().setLevel(logging.INFO)
 
 
@@ -73,7 +75,35 @@ class BaseDataset(torch.utils.data.Dataset):
                 input_ids += word_ids
             input_ids += self._convert("[SEP]")
             input_mask = [1] * len(input_ids)
-            output_ids = self._convert("[CLS]" + item.story + "[SEP]")
+            decoder_cut = False
+            if decoder_cut:
+                sentences = utils.sentence_cut(item.story)
+                output_ids = self._convert("[CLS]")
+                for sentence in sentences:
+                    word_pos = []
+                    for idx, word in enumerate(item.outline):
+                        pos = utils.get_pos_from_sen(word, sentence)
+                        if pos == -1:
+                            continue
+                        word_pos.append((pos, idx))
+                    word_pos = sorted(word_pos)
+                    sen_ids = self._convert("<s>")
+                    utils.debug("pos len", len(word_pos))
+                    for _, idx in word_pos:
+                        sen_ids += self._convert(f"<w{idx}>")
+                    output_ids = output_ids + sen_ids + self._convert(sentence) + self._convert("</s>")
+                    if len(output_ids) >= 510:
+                        output_ids = output_ids[:510] + self._convert("</s>")
+                        break
+                    # if len(output_ids) + len(sen_ids) <= 510:
+                    #     sentence_ids = self._convert(sentence)
+                    #     cut = min(510 - len(sentence_ids), len(sentence_ids))
+                    #     sentence_ids = sentence_ids[:cut]
+                    #     sen_ids += sentence_ids
+                output_ids += self._convert("[SEP]")
+                # utils.debug("output_ids", len(output_ids))
+            else:
+                output_ids = self._convert("[CLS]" + item.story + "[SEP]")
             output_mask = [1] * len(output_ids)
             encoder_labels_idx = []
             encoder_labels = []
@@ -180,6 +210,11 @@ def prepare_examples(path, is_train=True):
 
 
 def main(args):
+    logging.info("Config Init")
+    torch.cuda.set_device(args.local_rank)
+    dist.init_process_group(backend='nccl')
+    args.device = torch.device("cuda", args.local_rank)
+    # args.device = torch.device("cpu")
     logging.info("Load Data")
     train_data = prepare_examples(args.train_path, True)
     valid_data = prepare_examples(args.valid_path, False)
@@ -196,9 +231,11 @@ def main(args):
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path)
     model = OrderBartForConditionalGeneration.from_pretrained(args.pretrain_path)
     utils.debug("model", model)
-    special_token = {"additional_special_tokens": ["[titile]"] + ["[eos]"] + ["[bos]"] + ["[word]"]}
+    special_token = {"additional_special_tokens": ["[titile]"] + ["[eos]"] + ["[bos]"] + ["[word]"] + ["<s>", "</s>"]}
     word_token = [f"<w{i}>" for i in range(8)]
     special_token["additional_special_tokens"].extend(word_token)
+    vocab_token = ["“", "”"]
+    tokenizer.add_tokens(vocab_token)
     tokenizer.add_special_tokens(special_token)
     tokenizer.pad_token = "[PAD]"
     tokenizer.eos_token = "[SEP]"
@@ -209,19 +246,22 @@ def main(args):
     # model.config.eos_token_id = tokenizer.eos_token_id
     # model.config.bos_token_id = tokenizer.bos_token_id
     # model.config.forced_eos_token_id = tokenizer.eos_token_id
+    model.config.device = args.device
     model.resize_token_embeddings(len(tokenizer))
     logging.info(f"gpu num:{args.n_gpu}")
-    if args.n_gpu > 1:
-        model = torch.nn.DataParallel(model).cuda()
-    else:
-        model = model.cuda()
+    model = model.to(args.device)
+    if args.local_rank != -1:
+        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
         # model = model.cpu()
     args.pad_id = tokenizer.pad_token_id
     logging.info("Prepare Dataset")
     train_dataset = BaseDataset(train_data, tokenizer, True)
     valid_dataset = BaseDataset(valid_data, tokenizer, False)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    # valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
     # test_dataset = BaseDataset(test_data, tokenizer)
-    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
+    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=Collection(args))
+    # train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
     valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")

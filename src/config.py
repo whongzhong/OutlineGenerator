@@ -78,7 +78,8 @@ def Base_config():
     parser.add_argument("--tokenizer_path", type=str)
     parser.add_argument("--pretrain_path", type=str)
     parser.add_argument("--opt_step", type=int, default=1)
-
+    parser.add_argument("--local_rank", type=int, default=-1)
+    parser.add_argument("--model_load", type=str, default=None)
     args = parser.parse_args()
     
     return args
@@ -120,6 +121,7 @@ def OrderBase_config():
     parser.add_argument("--valid_path", type=str)
     parser.add_argument("--test_path", type=str)
     parser.add_argument("--model_save", type=str)
+    parser.add_argument("--local_rank", type=int, default=-1)
     # Prepare data config
     parser.add_argument("--build_data", action="store_true")
     parser.add_argument("--train_save", type=str)

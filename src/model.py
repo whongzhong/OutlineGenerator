@@ -189,8 +189,8 @@ class OrderBartForConditionalGeneration(BartPretrainedModel):
                         continue
                     index_list_l.append(l+idx*seq_len)
                     index_list_r.append(r+idx*seq_len)
-            index_list_l = torch.tensor(index_list_l).cuda()
-            index_list_r = torch.tensor(index_list_r).cuda()
+            index_list_l = torch.tensor(index_list_l).to(self.config.device)
+            index_list_r = torch.tensor(index_list_r).to(self.config.device)
             utils.debug("index_list_l shape", index_list_l.shape)
             utils.debug("index_list_r shape", index_list_r.shape)
             encoder_hidden = encoder_last_hidden.reshape(batch_size * seq_len, hidden)

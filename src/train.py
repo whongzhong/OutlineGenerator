@@ -7,15 +7,17 @@ from utils import utils
 import metrics
 import math
 import json
+import torch.distributed as dist
 
 
 def save(model, path, step):
+    # if dist.get_rank() == 0:
     path += "_epoch{}.pkl".format("{}".format(step))
     # if os.path.exists(path):
     #     os.remove(path)
     #     logging.info("model remove success!!!")
     logging.info("Save model")
-    torch.save(model, path)
+    torch.save(model.module, path)
 
 
 def draw(f, mp):
@@ -82,25 +84,27 @@ def Order_valid(valid_iter, model, tokenizer, args):
         predicts.extend(predict)
     acc, PMR, kendall_score, LCS, rouge = 0, 0, 0, 0, 0
     total, total_sents = 0, 0
-    for gold, predict in zip(args.gold, predicts):
-        predict = predict.replace("<S", "").replace(">", "").split(" ")
-        predict = [int(item) for item in predict]
-        total += 1
-        total_sents += len(gold)
-        acc += metrics.acc_compare(gold, predict)
-        ktua = metrics.kendall_tau(predict, gold)
-        LCS += metrics.lcs(gold, predict)
-        rouge += metrics.rouge_s(gold, predict)
-        if gold == predict:
-            PMR += 1
-        if math.isnan(ktua):
-            ktua = 0
-        kendall_score += ktua
-    logging.info(" Accuracy: {:.6f}".format(acc / total_sents))
-    logging.info(" PMR: {:.6f}".format(PMR / total))
-    logging.info(" Kendall's Tau: {:.6f}".format(kendall_score / total))
-    logging.info(" LCS: {:.6f}".format(LCS / total_sents))
-    logging.info(" Rouge-S: {:.6f}".format(rouge / total))
+    with open(args.model_save + f"_epoch{args.step}.txt", "w", encoding="utf-8") as f:
+        for gold, predict in zip(args.gold, predicts):
+            predict = predict.replace("<S", "").replace(">", "").split(" ")
+            predict = [int(item) for item in predict]
+            f.write(utils.list2str(predict)+"\n")
+            total += 1
+            total_sents += len(gold)
+            acc += metrics.acc_compare(gold, predict)
+            ktua = metrics.kendall_tau(predict, gold)
+            LCS += metrics.lcs(gold, predict)
+            rouge += metrics.rouge_s(gold, predict)
+            if gold == predict:
+                PMR += 1
+            if math.isnan(ktua):
+                ktua = 0
+            kendall_score += ktua
+        logging.info(" Accuracy: {:.6f}".format(acc / total_sents))
+        logging.info(" PMR: {:.6f}".format(PMR / total))
+        logging.info(" Kendall's Tau: {:.6f}".format(kendall_score / total))
+        logging.info(" LCS: {:.6f}".format(LCS / total_sents))
+        logging.info(" Rouge-S: {:.6f}".format(rouge / total))
     save(model, args.model_save, args.step)
         # utils.debug("predict", predict)
         # utils.debug("gold", gold)
@@ -180,7 +184,7 @@ def Order_train(train_iter, valid_iter, model, tokenizer, args):
 
 def Base_valid(valid_iter, model, tokenizer, args):
     model.eval()
-    predicts = []
+    predict_logits = []
     for item in valid_iter:
         if args.n_gpu > 1:
             logit = model.module.generate(item["input_ids"].cuda(), top_p=0.9, min_length=200, max_length=512)
@@ -188,9 +192,37 @@ def Base_valid(valid_iter, model, tokenizer, args):
             logit = model.generate(item["input_ids"].cuda(), top_p=0.9, min_length=200, max_length=512)
         # logit = model(input_ids=item["input_ids"].cuda(), attention_mask=item["attention_mask"].cuda()).logits
         # logit = torch.max(F.softmax(logit, dim=-1), dim=-1)[1].cpu()
-        predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
+        # utils.debug("logit shape", logit.shape)
+        batch_size, seq_len = logit.shape
+        pad = torch.tensor([0] * (batch_size * (512-seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
+        predict_logits.append(torch.cat([logit, pad], dim=-1))
+        # predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
         # utils.debug("predict", predict[0])
-        predicts.extend(predict)
+        # predicts.extend(predict)
+    predictions = torch.cat(predict_logits, dim=0)
+    utils.debug("predictions shape", predictions.shape)
+    shape = torch.tensor([predictions.shape[0], predictions.shape[1]], dtype=torch.long)
+    utils.debug("shape", shape)
+    gpu_num = dist.get_world_size()
+    gpu_num = 0
+    utils.debug("gpu_num", gpu_num)
+    if gpu_num > 0:
+        rank = dist.get_rank()
+        utils.debug("rank", rank)
+        if rank == 0:
+            for i in range(1, gpu_num):
+                req = dist.irecv(shape, i)
+                req.wait()
+                add_tensor = torch.tensor((shape[0],shape[1]))
+                utils.debug("add_tensor shape", add_tensor.shape)
+                req = dist.irecv(add_tensor, i)
+                req.wait()
+                predictions = torch.cat([predictions, add_tensor], dim=0)
+        else:
+            req = dist.isend(predictions.size(), 0)
+            # req.wait()
+            req = dist.isend(predictions, 0)
+    predicts = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in predictions]
     logging.info("Metrics Compare")
     res = metrics.base_compare(args.gold, predicts, args.outline)
     overall = metrics.overall_compare(res)
@@ -229,7 +261,7 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
                 if not any(nd in n for nd in no_decay) and not any(nd in n for nd in high_lr)
             ],
             "weight_decay": args.weight_decay,
-            "lr": args.learning_rate * 0.1,
+            # "lr": args.learning_rate * 0.1,
         },
         {
             "params": [
@@ -238,7 +270,7 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
                 if any(nd in n for nd in no_decay)
             ],
             "weight_decay": 0.0,
-            "lr": args.learning_rate * 0.1,
+            # "lr": args.learning_rate * 0.1,
         },
         {
             "params": [
@@ -253,6 +285,7 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
     mean_loss = 0
     for step in range(args.epoch):
+        train_iter.sampler.set_epoch(step)
         model.train()
         logging.info("Starting Training epoch:{}".format(step+1))
         for idx, item in enumerate(train_iter):
@@ -269,8 +302,9 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
         mean_loss /= len(train_iter)
         logging.info("Train loss:{:.4f}".format(mean_loss))
         mean_loss = 0
-        with torch.no_grad():
-            Base_valid(valid_iter, model, tokenizer, args)
+        if dist.get_rank() == 0:
+            with torch.no_grad():
+                Base_valid(valid_iter, model, tokenizer, args)
 
 
 def Rewrite_valid(valid_iter, model, tokenizer, args):
@@ -449,7 +483,7 @@ def OrderBase_train(train_iter, valid_iter, model, tokenizer, args):
                 if not any(nd in n for nd in no_decay) and not any(nd in n for nd in high_lr)
             ],
             "weight_decay": args.weight_decay,
-            "lr": args.learning_rate * 0.1,
+            # "lr": args.learning_rate * 0.1,
         },
         {
             "params": [
@@ -458,7 +492,7 @@ def OrderBase_train(train_iter, valid_iter, model, tokenizer, args):
                 if any(nd in n for nd in no_decay)
             ],
             "weight_decay": 0.0,
-            "lr": args.learning_rate * 0.1,
+            # "lr": args.learning_rate * 0.1,
         },
         {
             "params": [
@@ -473,11 +507,12 @@ def OrderBase_train(train_iter, valid_iter, model, tokenizer, args):
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
     mean_loss = 0
     for step in range(args.epoch):
+        train_iter.sampler.set_epoch(step)
         model.train()
         logging.info("Starting Training epoch:{}".format(step+1))
         for idx, item in enumerate(train_iter):
-            output = model(input_ids=item["input_ids"].cuda(), attention_mask=item["input_mask"].cuda(), labels=item["output_ids"].cuda(), \
-                encoder_labels=item["encoder_labels"].cuda(), encoder_labels_idx=item["encoder_labels_idx"])
+            output = model(input_ids=item["input_ids"].to(args.device), attention_mask=item["input_mask"].to(args.device), labels=item["output_ids"].to(args.device), \
+                encoder_labels=item["encoder_labels"].to(args.device), encoder_labels_idx=item["encoder_labels_idx"])
             loss = output.loss
             encoder_loss = output.encoder_loss
             utils.debug("loss", loss)
@@ -496,5 +531,6 @@ def OrderBase_train(train_iter, valid_iter, model, tokenizer, args):
         mean_loss /= len(train_iter)
         logging.info("Train loss:{:.4f}".format(mean_loss))
         mean_loss = 0
-        with torch.no_grad():
-            OrderBase_valid(valid_iter, model, tokenizer, args)
+        if dist.get_rank() == 0:
+            with torch.no_grad():
+                OrderBase_valid(valid_iter, model, tokenizer, args)

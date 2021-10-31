@@ -4,7 +4,7 @@ source activate telma
 export PYTHONPATH="$HOME/opt/tiger/polish"
 export CUDA_VISIBLE_DEVICES="0,1,2,3"
 
-MODEL="Base_BART"
+MODEL="OrderBase"
 # TOKENIZER="fnlp/cpt-large"
 # TOKENIZER="$HOME/model/bart_zyfeng/bart-zyfeng"
 # TOKENIZER="hfl/chinese-roberta-wwm-ext"
@@ -16,7 +16,7 @@ PRETRAIN="fnlp/bart-large-chinese"
 # TRAIN_PATH="$HOME/Datasets/chinese_tonghua/chinese_tonghua_etstory_clean_2_outline_2.jsonl"
 TRAIN_PATH="$HOME/Datasets/LOT/data/train_order.jsonl"
 
-python ../src/OrderBase.py \
+python -m torch.distributed.launch --nproc_per_node 3 ../src/OrderBase.py \
 --train \
 --train_path="$TRAIN_PATH" \
 --valid_path="$HOME/Datasets/LOT/data/val.jsonl" \
@@ -26,5 +26,5 @@ python ../src/OrderBase.py \
 --learning_rate=0.00003 \
 --batch_size=3 \
 --epoch=40 \
---opt_step=16 \
+--opt_step=3 \
 # > ../log/OrderBase.log 2>&1 &

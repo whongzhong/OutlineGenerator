@@ -63,7 +63,7 @@ class OrderDataset(torch.utils.data.Dataset):
     
     def build(self, Examples, tokenizer):
         for item in Examples:
-            input = "[title]" + item.title + "[shuffle]"
+            input = ""
             for idx, word in enumerate(item.outline):
                 input += f"<S{idx+1}>" + word
             input += "[EOS]"
@@ -176,7 +176,7 @@ def build_data(args):
 def example_data(data, args):
     examples = []
     for item in data:
-        examples.append(Example(outline=item["outline"], order=item["order"], title=item["title"]))
+        examples.append(Example(outline=item["outline"], order=item["order"], title=""))
         args.max_length = max(args.max_length, len(item["order"]))
     return examples
 
@@ -203,6 +203,48 @@ def extend_Examples(raw_examples):
 
 
 def main(args):
+    args.max_length = 0
+    logging.info("Read Data")
+    train_examples = prepare_data(args.train_path, args)
+    train_examples = extend_Examples(train_examples)
+    valid_examples = prepare_data(args.valid_path, args)
+    # test_examples = prepare_data(args.test_path, args)
+    args.gold = []
+    for item in valid_examples:
+        args.gold.append(item.order)
+    logging.info("Load Pre-train Model and Tokenizer")
+    model = BartForConditionalGeneration.from_pretrained(args.pretrain_path).cuda()
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    special_token = {"additional_special_tokens":['[shuffle]', '[orig]', '[EOS]', '[title]']}
+    extra_token = [f'<S{str(i+1)}>' for i in range(args.max_length)]
+    # special_token["additional_special_tokens"].extend(extra_token)
+    tokenizer.add_special_tokens(special_token)
+    tokenizer.add_tokens(extra_token)
+    tokenizer.pad_token = '[PAD]'
+    tokenizer.eos_token = '[EOS]'
+    tokenizer.bos_token = '[orig]'
+    model.config.decoder_start_token_id = tokenizer.bos_token_id
+    model.config.eos_token_id = tokenizer.eos_token_id
+    model.config.bos_token_id = tokenizer.bos_token_id
+    model.config.forced_eos_token_id = tokenizer.eos_token_id
+    args.pad_id = tokenizer.pad_token_id
+    utils.debug("model.config.eos_token_id", model.config.eos_token_id)
+    utils.debug("model.config.bos_token_id", model.config.bos_token_id)
+    utils.debug("model.config.decoder_start_token_id", model.config.decoder_start_token_id)
+    model.resize_token_embeddings(len(tokenizer))
+    logging.info("Prepare Dataset and Iterator")
+    train_dataset = OrderDataset(train_examples, tokenizer, args)
+    valid_dataset = OrderDataset(valid_examples, tokenizer, args)
+    # test_dataset = OrderDataset(test_examples, tokenizer, args)
+    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
+    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
+    # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
+    
+    logging.info("Start Training")
+    Order_train(train_iter, valid_iter, model, tokenizer, args)
+
+
+def predict(args):
     args.max_length = 0
     logging.info("Read Data")
     train_examples = prepare_data(args.train_path, args)
@@ -252,3 +294,5 @@ if __name__ == "__main__":
     elif args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)
+    # elif args.predict:
+    #     predict(args)

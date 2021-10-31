@@ -12,7 +12,9 @@ import metrics
 import eval
 import random
 import datetime
-logging.getLogger().setLevel(logging.DEBUG)
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+logging.getLogger().setLevel(logging.INFO)
 
 
 class Example(object):
@@ -120,6 +122,10 @@ def prepare_examples(path):
 
 
 def main(args):
+    logging.info("Config Init")
+    torch.cuda.set_device(args.local_rank)
+    dist.init_process_group(backend='nccl')
+    args.device = torch.device("cuda", args.local_rank)
     logging.info("Load Data")
     train_data = prepare_examples(args.train_path)
     valid_data = prepare_examples(args.valid_path)
@@ -140,11 +146,13 @@ def main(args):
         model = torch.load(args.model_load)
     else:
         model = BartForConditionalGeneration.from_pretrained(args.pretrain_path)
-    utils.debug("model", model)
+    # utils.debug("model", model)
     # model = CPTForConditionalGeneration.from_pretrained(args.pretrain_path)
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
     special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"]}
     tokenizer.add_special_tokens(special_token)
+    word_token = ["“", "”"]
+    tokenizer.add_tokens(word_token)
     tokenizer.pad_token = "[PAD]"
     tokenizer.eos_token = "[SEP]"
     tokenizer.bos_token = "[CLS]"
@@ -155,20 +163,29 @@ def main(args):
     model.config.bos_token_id = tokenizer.bos_token_id
     model.config.forced_eos_token_id = tokenizer.eos_token_id
     model.resize_token_embeddings(len(tokenizer))
+    model.config.device = args.device
     logging.info(f"eos_token_id:{model.config.eos_token_id}")
     logging.info(f"bos_token_id:{model.config.bos_token_id}")
     logging.info(f"gpu num:{args.n_gpu}")
-    if args.n_gpu > 1:
-        model = torch.nn.DataParallel(model).cuda()
-    else:
-        model = model.cuda()
+    # DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    logging.info(f"local rank:{args.local_rank}")
+    model = model.to(args.device)
+    if args.local_rank != -1:
+        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    # if args.n_gpu > 1:
+    #     model = DDP(model).
+    # else:
+    #     model = model.cuda()
     args.pad_id = tokenizer.pad_token_id
     logging.info("Prepare Dataset")
     train_dataset = BaseDataset(train_data, tokenizer)
     valid_dataset = BaseDataset(valid_data, tokenizer)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
+    args.valid_sampler_dataset_len = len(valid_sampler.dataset)
     # test_dataset = BaseDataset(test_data, tokenizer)
-    # train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=Collection(args))
     valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")

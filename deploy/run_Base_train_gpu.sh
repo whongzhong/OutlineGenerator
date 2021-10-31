@@ -16,7 +16,7 @@ PRETRAIN="fnlp/bart-large-chinese"
 # TRAIN_PATH="$HOME/Datasets/chinese_tonghua/chinese_tonghua_etstory_clean_2_outline_2.jsonl"
 TRAIN_PATH="$HOME/Datasets/LOT/data/train.jsonl"
 
-python ../src/Base.py \
+python -m torch.distributed.launch --nproc_per_node 3 ../src/Base.py \
 --train \
 --train_path="$TRAIN_PATH" \
 --valid_path="$HOME/Datasets/LOT/data/val.jsonl" \
@@ -24,7 +24,8 @@ python ../src/Base.py \
 --pretrain_path="$PRETRAIN" \
 --model_save="$HOME/opt/tiger/polish/model/$MODEL" \
 --learning_rate=0.00003 \
---batch_size=8 \
+--batch_size=3 \
 --epoch=30 \
---opt_step=2 \
+--opt_step=3 \
+# --model_load="$HOME/opt/tiger/polish/model/Base_BART/LOT/2021_10_27_23_25_epoch27.pkl" \
 # > ../log/Base.log 2>&1 &

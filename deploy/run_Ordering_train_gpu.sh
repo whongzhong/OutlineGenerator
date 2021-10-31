@@ -14,9 +14,8 @@ PRETRAIN="$HOME/model/bart_zyfeng/bart-zyfeng"
 
 python ../src/Ordering.py \
 --train \
---train_path="$HOME/opt/tiger/polish/data/LOT/ordering_train.jsonl" \
---valid_path="$HOME/opt/tiger/polish/data/LOT/ordering_valid.jsonl" \
---test_path="$HOME/opt/tiger/polish/data/LOT/ordering_test.jsonl" \
+--train_path="$HOME/Datasets/LOT/data/train_order.jsonl" \
+--valid_path="$HOME/Datasets/LOT/data/valid_order.jsonl" \
 --tokenizer_path="$TOKENIZER" \
 --pretrain_path="$PRETRAIN" \
 --model_save="$HOME/opt/tiger/polish/model/$MODEL" \
