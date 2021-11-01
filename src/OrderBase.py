@@ -258,17 +258,20 @@ def main(args):
     train_dataset = BaseDataset(train_data, tokenizer, True)
     valid_dataset = BaseDataset(valid_data, tokenizer, False)
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    # valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
+    valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
+    args.valid_len = len(valid_dataset)
+    args.parameter = utils.get_train_parameter()
     # test_dataset = BaseDataset(test_data, tokenizer)
     train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=Collection(args))
     # train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=Collection(args))
-    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
+    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, sampler=valid_sampler,collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")
     OrderBase_train(train_iter, valid_iter, model, tokenizer, args)
     
 
 if __name__ == "__main__":
+    utils.set_seed(959794)
     args = OrderBase_config()
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])

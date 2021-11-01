@@ -305,7 +305,7 @@ def rewrite(args):
     args.rewrite_path = args.rewrite_save
 
 if __name__ == "__main__":
-    utils.set_seed(19980917)
+    utils.set_seed(42)
     args = Rewrite_config()
     time_now = utils.d2s(datetime.datetime.now(), time=True)
     # args.tokenizer_save = "/".join([args.tokenizer_save, "tokenizer" + time_now + ".json"])

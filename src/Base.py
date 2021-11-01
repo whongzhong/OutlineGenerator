@@ -49,12 +49,14 @@ class BaseDataset(torch.utils.data.Dataset):
     
     def build(self, Examples, tokenizer):
         for item in Examples:
-            input = "[word]"
+            # input = "[word]"
+            input = ""
             for word in item.outline:
                 input += "<w>"
                 input += word
-            input += "[SEP]"
-            output = "[CLS]" + item.story + "[SEP]"
+            # input += "[SEP]"
+            # output = "[CLS]" + item.story + "[SEP]"
+            output = item.story + "[SEP]"
             input_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input))
             input_mask = [1] * len(input_ids)
             output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(output))
@@ -182,17 +184,22 @@ def main(args):
     valid_dataset = BaseDataset(valid_data, tokenizer)
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
-    args.valid_sampler_dataset_len = len(valid_sampler.dataset)
+    args.valid_len = len(valid_dataset)
     # test_dataset = BaseDataset(test_data, tokenizer)
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=Collection(args))
-    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
+    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, sampler=valid_sampler, collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")
     Base_train(train_iter, valid_iter, model, tokenizer, args)
 
 
 def predict(args):
+    logging.info("Config Init")
+    torch.cuda.set_device(args.local_rank)
+    dist.init_process_group(backend='nccl')
+    args.device = torch.device("cuda", args.local_rank)
+    logging.info("Load Data")
     test_data = prepare_examples(args.test_path)
     args.gold = []
     args.outline = []
@@ -207,7 +214,9 @@ def predict(args):
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
-    model = torch.load(args.model_load).cuda()
+    model = torch.load(args.model_load).to(args.device)
+    if args.local_rank != -1:
+        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
     # utils.debug("model", model)
     # model = CPTForConditionalGeneration.from_pretrained(args.pretrain_path)
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
@@ -220,15 +229,26 @@ def predict(args):
     tokenizer.bos_token = "[CLS]"
     args.pad_id = tokenizer.pad_token_id
     test_dataset = BaseDataset(test_data, tokenizer)
-    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
+    args.test_len = len(test_dataset)
+    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.batch_size)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, sampler=test_sampler, collate_fn=Collection(args))
     logging.info("Start predict")
+    parameter_list = utils.get_parameter()
+    continue_list = []
+    args.output += f"_batch{args.batch_size}"
     with torch.no_grad():
-        Base_predict(test_iter, model, tokenizer, args)
+        for idx, parameter in enumerate(parameter_list):
+            if idx in continue_list:
+                continue
+            args.parameter = parameter
+            args.step = idx
+            Base_predict(test_iter, model, tokenizer, args)
     logging.info("END")
 
 
 if __name__ == "__main__":
     args = Base_config()
+    utils.set_seed(959794)
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)

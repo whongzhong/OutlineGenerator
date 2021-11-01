@@ -222,3 +222,82 @@ def get_pos_from_sen(word, s):
             if s[i-len(word)+1: i+1] == word:
                 return i
     return -1
+
+
+def get_parameter():
+    parameter_list = [
+        {
+            "max_length": 512,
+            "min_length": 125,
+            "do_sample": True,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 0,
+            "top_p": 0.9,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_SampleModeMin125Max512topP09K0"
+        },
+        {
+            "max_length": 512,
+            "min_length": 125,
+            "do_sample": True,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 25,
+            "top_p": 0.9,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_SampleModeMin125Max512topP09K25"
+        },
+        {
+            "max_length": 512,
+            "min_length": 125,
+            "do_sample": True,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 0.9,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_SampleModeMin125Max512topP09K50"
+        },
+        {
+            "max_length": 512,
+            "min_length": 125,
+            "do_sample": True,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 0,
+            "top_p": 0.9,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_SampleModeMin125Max512topP09K00"
+        },
+    ]
+    return parameter_list
+
+
+def get_train_parameter():
+    return {
+        "max_length": 512,
+            "min_length": 125,
+            "do_sample": True,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 0,
+            "top_p": 0.9,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "SampleModeMin125Max512topP09K0"
+    }
