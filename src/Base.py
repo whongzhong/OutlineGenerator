@@ -49,14 +49,14 @@ class BaseDataset(torch.utils.data.Dataset):
     
     def build(self, Examples, tokenizer):
         for item in Examples:
-            # input = "[word]"
-            input = ""
+            input = "[word]"
+            # input = ""
             for word in item.outline:
                 input += "<w>"
                 input += word
-            # input += "[SEP]"
-            # output = "[CLS]" + item.story + "[SEP]"
-            output = item.story + "[SEP]"
+            input += "[SEP]"
+            output = "[CLS]" + item.story + "[SEP]"
+            # output = item.story + "[SEP]"
             input_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input))
             input_mask = [1] * len(input_ids)
             output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(output))

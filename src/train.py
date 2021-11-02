@@ -584,6 +584,6 @@ def OrderBase_train(train_iter, valid_iter, model, tokenizer, args):
         mean_loss /= len(train_iter)
         logging.info("Train loss:{:.4f}".format(mean_loss))
         mean_loss = 0
-        if dist.get_rank() == 0:
-            with torch.no_grad():
-                OrderBase_valid(valid_iter, model, tokenizer, args)
+        # if dist.get_rank() == 0:
+        with torch.no_grad():
+            OrderBase_valid(valid_iter, model, tokenizer, args)
