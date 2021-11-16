@@ -232,6 +232,15 @@ def Base_predict(test_iter, model, tokenizer, args):
     if dist.get_rank() != 0:
         return
       
+    
+    name = parameter["name"]    
+    with open(args.output + f"_{name}.txt", "w", encoding="utf-8") as f:
+        for predict, outline in zip(predicts, args.outline):
+            draw(f, {'story': predict, 'outline': outline})
+            
+        #for i in range(len(predicts)):
+        #    f.write(predicts[i].strip()+"\n")
+    '''
     logging.info("Metrics Compare")
     res = metrics.base_compare(args.gold, predicts, args.outline)
     overall = metrics.overall_compare(res)
@@ -240,9 +249,7 @@ def Base_predict(test_iter, model, tokenizer, args):
     logging.info(f"generate parameter name: {name}")
     for k, v in res.items():
         logging.info("{}: {:.4f}".format(k, v))
-    with open(args.output + f"_{name}.txt", "w", encoding="utf-8") as f:
-        for i in range(len(predicts)):
-            f.write(predicts[i].strip()+"\n")
+        
     with open(args.ans_list, "a", encoding="utf-8") as f:
         # for i in range(len(predicts)):
         #     mp = {
@@ -259,7 +266,7 @@ def Base_predict(test_iter, model, tokenizer, args):
             # f.write("-----------------------------------------------\n")
         res["path"] = args.output + f"_{name}.txt"
         draw(f, res)
-
+    '''
 
 def Base_valid(valid_iter, model, tokenizer, args):
     model.eval()

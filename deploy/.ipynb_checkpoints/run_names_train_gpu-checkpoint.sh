@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # 输入要执行的命令，例如 ./hello 或 python test.py 等
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8
 export PYTHONPATH=/userhome/whzhong/code/polish
 export LC_ALL=C.UTF-8
 
 
-exec 1>$PYTHONPATH/info/debug.out
-exec 2>$PYTHONPATH/info/debug.error 
+exec 1>$PYTHONPATH/info/names_debug.out
+exec 2>$PYTHONPATH/info/names_debug.error 
 
 # TOKENIZER="fnlp/cpt-large"
 # TOKENIZER="$HOME/model/bart_zyfeng/bart-zyfeng"
@@ -18,19 +18,20 @@ PRETRAIN="$PYTHONPATH/data/models/CBART"
 # PRETRAIN="fnlp/cpt-large"
 
 # TRAIN_PATH="$HOME/Datasets/chinese_tonghua/chinese_tonghua_etstory_clean_2_outline_2.jsonl"
-TRAIN_PATH="$PYTHONPATH/data/datasets/LOTdatasets/permute_data/6x/train.jsonl"
+TRAIN_PATH="$PYTHONPATH/data/datasets/LOTdatasets/names/train.jsonl"
 # TRAIN_PATH="$HOME/Datasets/LOT_datasets_and_models/data/datasets/LOTdatasets/permute/train.jsonl"
 
-/userhome/anaconda3/envs/lot10/bin/python -m torch.distributed.launch --nproc_per_node 1 ../src/Base.py \
+/userhome/anaconda3/envs/lot10/bin/python -m torch.distributed.launch --nproc_per_node 8 ../src/Base.py \
 --train \
+--names  \
 --train_path="$TRAIN_PATH" \
---valid_path="$PYTHONPATH/data/datasets/LOTdatasets/val.jsonl" \
+--valid_path="$PYTHONPATH/data/datasets/LOTdatasets/names/val.jsonl" \
 --tokenizer_path="$TOKENIZER" \
 --pretrain_path="$PRETRAIN" \
---model_save="$PYTHONPATH/ckpts/debug" \
+--model_save="$PYTHONPATH/ckpts/names" \
 --learning_rate=0.00003 \
 --batch_size=12 \
 --epoch=40 \
---opt_step=1 
+--opt_step=1 \
 # --model_load="$HOME/opt/tiger/polish/model/Base_BART/LOT/2021_10_27_23_25_epoch27.pkl" \
 # > ../log/Base.log 2>&1 &

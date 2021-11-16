@@ -72,7 +72,7 @@ class BaseDataset(torch.utils.data.Dataset):
             input_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input))
             input_mask = [1] * len(input_ids)
             output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(output))
-            output_mask = [1] * len(input_ids)
+            output_mask = [1] * len(output_ids)
             self.input_ids.append(input_ids)
             self.input_mask.append(input_mask)
             self.output_ids.append(output_ids)
@@ -172,7 +172,7 @@ def main(args):
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
     if args.inserted_keywords:
         word_label = [f'<WORD_{idx}>' for idx in range(9)]
-        special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + ["<SENT>"] + word_label}
+        special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + ["<SENT>"] + ["</s>"] + word_label}
     elif args.replace_name:
         word_label = [f'<NAME_{idx}>' for idx in range(30)]
         special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + word_label}
@@ -254,7 +254,7 @@ def predict(args):
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
     if args.inserted_keywords:
         word_label = [f'<WORD_{idx}>' for idx in range(9)]
-        special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + ["<SENT>"] + word_label}
+        special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + ["<SENT>"] + ["</s>"] + word_label}
     elif args.replace_name:
         word_label = [f'<NAME_{idx}>' for idx in range(30)]
         special_token = {"additional_special_tokens": ["[titile]"] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + word_label}
