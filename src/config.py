@@ -89,6 +89,9 @@ def Base_config():
     parser.add_argument("--inserted_keywords", action="store_true", default=False)
     parser.add_argument("--replace_name", action="store_true", default=False)
     parser.add_argument("--cos_lr", action="store_true", default=False)
+    parser.add_argument("--CPM", action="store_true", default=False)
+    parser.add_argument("--deepspeed_config", type=str, default=None)
+    parser.add_argument("--deep_speed", action="store_true", default=False)
     
     args = parser.parse_args()
     
