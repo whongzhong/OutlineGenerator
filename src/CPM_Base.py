@@ -5,6 +5,7 @@ import logging
 # from torch._C import dtype
 # from transformers.utils.dummy_pt_objects import BartForCausalLM, BartModel
 from transformers import AutoTokenizer, BartForConditionalGeneration, BertTokenizer, AutoModelWithLMHead
+from transformers.models.cpm.tokenization_cpm import CpmTokenizer
 from GPT2LMHead import GPT2ContextLMHeadModel
 from train import *
 import json
@@ -195,7 +196,7 @@ def main(args):
     args.n_gpu = torch.cuda.device_count()
     utils.debug("tokenizer", args.tokenizer_path)
     utils.debug("pretrain", args.pretrain_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    tokenizer = CpmTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
     if args.model_load:
@@ -232,7 +233,6 @@ def main(args):
     logging.info(f"gpu num:{args.n_gpu}")
     # DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
     logging.info(f"local rank:{args.local_rank}")
-    model = model.to(args.device)
     
     optimizer = get_optimizer(args, model)
     #model, optimizer = amp.initialize(model, optimizer, opt_level="O2")
@@ -265,6 +265,7 @@ def main(args):
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
         
     
+    model = model.to(args.device)
     model, optimizer, _, _ = deepspeed.initialize(args=args,
                                                      model=model,
                                                      model_parameters=model.parameters(),
@@ -294,10 +295,12 @@ def predict(args):
     args.n_gpu = torch.cuda.device_count()
     utils.debug("tokenizer", args.tokenizer_path)
     utils.debug("pretrain", args.pretrain_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    tokenizer = CpmTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
-    model = torch.load(args.model_load).to(args.device)
+    model = torch.load(args.model_load)
+    
+    optimizer = get_optimizer(args, model)
     
     if args.local_rank != -1:
         model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
@@ -327,6 +330,14 @@ def predict(args):
     parameter_list = utils.get_parameter()
     continue_list = []
     args.output += f"_batch{args.batch_size}"
+    
+    model = model.to(args.device)
+    model, optimizer, _, _ = deepspeed.initialize(args=args,
+                                                     model=model,
+                                                     model_parameters=model.parameters(),
+                                                     optimizer=optimizer,
+                                                     lr_scheduler=scheduler)
+    
     with torch.no_grad():
         for idx, parameter in enumerate(parameter_list):
             if idx in continue_list:

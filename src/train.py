@@ -10,8 +10,6 @@ import json
 import torch.distributed as dist
 import re
 
-from apex import amp
-
 def save(model, path, step):
     # if dist.get_rank() == 0:
     path += "_epoch{}.pkl".format("{}".format(step))
@@ -187,30 +185,35 @@ def Order_train(train_iter, valid_iter, model, tokenizer, args):
 def Base_predict(test_iter, model, tokenizer, args):
     model.eval()
     predict_logits = []
+    truncate_inputs = []
     predicts = []
     parameter = args.parameter
     for item in test_iter:
+        current_inputs = item["input_ids"].to(args.device)
         # if args.n_gpu > 1:
             # logit = model.module.generate(item["input_ids"].to(args.device), do_sample=False, top_p=0.9, min_length=200, max_length=512)
         # else:
             # logit = model.generate(item["input_ids"].to(args.device), do_sample=False, top_p=0.9, min_length=200, max_length=512)
         if args.n_gpu > 1:
-            logit = model.module.generate(item["input_ids"].to(args.device), max_length=parameter["max_length"], \
+            logit = model.module.generate(current_inputs, max_length=parameter["max_length"], \
                 min_length=parameter["min_length"], do_sample=parameter["do_sample"], early_stopping=parameter["early_stopping"], \
                 num_beams=parameter["num_beams"], temperature=parameter["temperature"], top_k=parameter["top_k"], top_p=parameter["top_p"], \
                 length_penalty=parameter["length_penalty"], no_repeat_ngram_size=parameter["no_repeat_ngram_size"])
         else:
-            logit = model.module.generate(item["input_ids"].to(args.device), max_length=parameter["max_length"], \
+            logit = model.module.generate(current_inputs, max_length=parameter["max_length"], \
                 min_length=parameter["min_length"], do_sample=parameter["do_sample"], early_stopping=parameter["early_stopping"], \
                 num_beams=parameter["num_beams"], temperature=parameter["temperature"], top_k=parameter["top_k"], top_p=parameter["top_p"], \
                 length_penalty=parameter["length_penalty"])
-        # predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
-        # utils.debug("predict", predict[0])
         batch_size, seq_len = logit.shape
+        _, input_seq_len = current_inputs.shape
+
         pad = torch.tensor([0] * (batch_size * (512-seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
+        input_pad = torch.tensor([0] * (batch_size * (512-input_seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
         predict_logits.append(torch.cat([logit, pad], dim=-1))
-        # predicts.extend(predict)
-    predictions = utils.distributed_concat(torch.cat(predict_logits, dim=0), args.test_len)
+        truncate_inputs.append(torch.cat([current_inputs, input_pad], dim=-1))
+        
+    truncate_inputs = utils.distributed_concat(torch.cat(truncate_inputs, dim=0), args.valid_len)
+    predictions = utils.distributed_concat(torch.cat(predict_logits, dim=0), args.valid_len)
     
     
     special_token_flag = True
@@ -218,10 +221,12 @@ def Base_predict(test_iter, model, tokenizer, args):
         special_token_flag = False
     
     predicts = [tokenizer.decode(g, skip_special_tokens=special_token_flag, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in predictions]
+    
+    truncate_inputs = [tokenizer.decode(g, skip_special_tokens=special_token_flag, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in truncate_inputs]
     logging.info(f"predicts len: {len(predicts)}")
 
     if args.CPM:
-        predicts = [re.sub("*\[SEP\]", "", g) for g in predicts]
+        predicts = [g[len(ip):] for ip, g in zip(truncate_inputs, predicts)]
 
     if args.replace_name:
         new_predicts = []
@@ -338,10 +343,10 @@ def Base_valid(valid_iter, model, tokenizer, args):
     res["overall"] = overall
     for k, v in res.items():
         logging.info("{}: {:.4f}".format(k, v))
-    if args.deep_speed:
-        model.save_checkpoint(args.model_save, args.step)
-    else:
-        save(model, args.model_save, args.step)
+    #if args.deep_speed:
+    #    model.save_checkpoint(args.model_save, args.step)
+    #else:
+    save(model, args.model_save, args.step)
     with open(args.model_save + f"_epoch{args.step}.txt", "w", encoding="utf-8") as f:
         for i in range(len(predicts)):
             f.write(predicts[i].strip()+"\n")
