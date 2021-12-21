@@ -4,17 +4,31 @@ from utils import utils
 import logging
 # from torch._C import dtype
 # from transformers.utils.dummy_pt_objects import BartForCausalLM, BartModel
-from transformers import AutoTokenizer, BartForConditionalGeneration, BertTokenizer, AutoModelWithLMHead
-from GPT2LMHead import GPT2ContextLMHeadModel
+from transformers import AutoTokenizer, GPT2LMHeadModel, BertTokenizer, AutoModelWithLMHead
 from train import *
 import json
 import datetime
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import deepspeed
+import re
 
 logging.getLogger().setLevel(logging.INFO)
 
+
+def cut_story(story):
+    end_set = {'”', "。", "！", "？", ""}
+    story = story[:506]
+    r_idx = story.rfind("<SENT>")
+    if r_idx > 0:
+        return story[:r_idx]
+    
+    #print(story)
+    for i in range(505, -1, -1):
+        if story[i] in end_set:
+            return story[:i + 1]
+        
+    return story[:506]
 
 class Example(object):
     def __init__(self, story, outline, replace_name=[], title=""):
@@ -23,7 +37,7 @@ class Example(object):
         self.replace_name = replace_name
         self.un_cat_story = self.story
         if len(self.story) >= 506:
-            self.story = self.story[:500]
+            self.story = cut_story(self.story)
         # self.title = title
 
 
@@ -66,7 +80,7 @@ class BaseDataset(torch.utils.data.Dataset):
                         input = input.replace(real_name, f"<NAME_{idx}>")
                         item.story = item.story.replace(real_name, f"<NAME_{idx}>")
             input += "[SEP]"
-            output = "[CLS]" + input + item.story[:500] + "[EOS]"
+            output = "<cls>" + input + item.story + "<eod>"
             # output = item.story + "[SEP]"
             input_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input))
             output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(output))
@@ -207,18 +221,18 @@ def main(args):
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
     if args.inserted_keywords:
         word_label = [f'<WORD_{idx}>' for idx in range(9)]
-        special_token = {"additional_special_tokens": ["[titile]"] +['[EOS]'] +["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + ["<SENT>"] + ["</s>"] + word_label}
+        special_token = {"additional_special_tokens": ["[titile]"] +['<eod>'] +["[SEP]"] + ["<cls>"] + ["[word]"] + ["<w>"] + ["<SENT>"]+ word_label}
     elif args.replace_name:
         word_label = [f'<NAME_{idx}>' for idx in range(30)]
-        special_token = {"additional_special_tokens": ["[titile]"] +['[EOS]'] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + word_label}
+        special_token = {"additional_special_tokens": ["[titile]"] +['<eod>'] + ["[SEP]"] + ["<cls>"] + ["[word]"] + ["<w>"] + word_label}
     else:
-        special_token = {"additional_special_tokens": ["[titile]"] +['[EOS]'] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"]}
+        special_token = {"additional_special_tokens": ["[titile]"] +['<eod>'] + ["[SEP]"] + ["<cls>"] + ["[word]"] + ["<w>"]}
     tokenizer.add_special_tokens(special_token)
     word_token = ["“", "”"]
     tokenizer.add_tokens(word_token)
-    tokenizer.pad_token = "[PAD]"
-    tokenizer.eos_token = "[EOS]"
-    tokenizer.bos_token = "[CLS]"
+    tokenizer.pad_token = "<pad>"
+    tokenizer.eos_token = "<eod>"
+    tokenizer.bos_token = "<cls>"
     # tokenizer.eos_token = "[eos]"
     # tokenizer.bos_token = "[bos]"
     model.config.decoder_start_token_id = tokenizer.eos_token_id
@@ -250,6 +264,13 @@ def main(args):
     valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
     args.valid_len = len(valid_dataset)
     # test_dataset = BaseDataset(test_data, tokenizer)
+    
+    test_data = prepare_examples(args.test_path, args)
+    test_dataset = BaseDataset(test_data, tokenizer, args)
+    args.test_len = len(test_dataset)
+    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.batch_size)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, sampler=test_sampler, collate_fn=Collection(args))
+    
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=Collection(args))
     valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, sampler=valid_sampler, collate_fn=Collection(args))
@@ -271,7 +292,7 @@ def main(args):
                                                      optimizer=optimizer,
                                                      lr_scheduler=scheduler)
     
-    CPM_train(train_iter, valid_iter, model, tokenizer, args, optimizer)
+    CPM_train(train_iter, valid_iter, test_iter, model, tokenizer, args, optimizer)
 
 
 def predict(args):
@@ -297,36 +318,48 @@ def predict(args):
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
+    #model = deepspeed.DeepSpeedEngine.load_checkpoint(load_dir=args.model_load)
     model = torch.load(args.model_load).to(args.device)
-    
     if args.local_rank != -1:
         model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    #model = deepspeed.init_inference(model=model)
+    
+   # model = torch.load(args.model_load, map_location='cpus')
+    #model = deepspeed.init_inference(model,
+    #                             mp_size=2,
+    #                             dtype=torch.half,
+    #                             checkpoint=None,
+    #                             replace_method='auto')
+    #model, optimizer, _, _ = deepspeed.initialize(args=args,
+    #                                                 model=model,
+    #                                                 model_parameters=model.parameters())
     # utils.debug("model", model)
     # model = CPTForConditionalGeneration.from_pretrained(args.pretrain_path)
     # special_token = {"additional_special_tokens": ["[titile]"] + ["EOS"] + ["BOS"] + [f"<w{i}>" for i in range(8)]}
     if args.inserted_keywords:
         word_label = [f'<WORD_{idx}>' for idx in range(9)]
-        special_token = {"additional_special_tokens": ["[titile]"] +['[EOS]'] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + ["<SENT>"] + ["</s>"] + word_label}
+        special_token = {"additional_special_tokens": ["[titile]"] +['<eod>'] + ["[SEP]"] + ["<cls>"] + ["[word]"] + ["<w>"] + ["<SENT>"] + word_label}
     elif args.replace_name:
         word_label = [f'<NAME_{idx}>' for idx in range(30)]
-        special_token = {"additional_special_tokens": ["[titile]"] +['[EOS]'] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"] + word_label}
+        special_token = {"additional_special_tokens": ["[titile]"] +['<eod>'] + ["[SEP]"] + ["<cls>"] + ["[word]"] + ["<w>"] + word_label}
     else:
-        special_token = {"additional_special_tokens": ["[titile]"] +['[EOS]'] + ["[SEP]"] + ["[CLS]"] + ["[word]"] + ["<w>"]}
+        special_token = {"additional_special_tokens": ["[titile]"] +['<eod>'] + ["[SEP]"] + ["<cls>"] + ["[word]"] + ["<w>"]}
     tokenizer.add_special_tokens(special_token)
     word_token = ["“", "”"]
     tokenizer.add_tokens(word_token)
-    tokenizer.pad_token = "[PAD]"
-    tokenizer.eos_token = "[EOS]"
-    tokenizer.bos_token = "[CLS]"
+    tokenizer.pad_token = "<pad>"
+    tokenizer.eos_token = "<eod>"
+    tokenizer.bos_token = "<cls>"
     args.pad_id = tokenizer.pad_token_id
     test_dataset = BaseDataset(test_data, tokenizer, args)
     args.test_len = len(test_dataset)
-    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.batch_size)
-    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, sampler=test_sampler, collate_fn=Collection(args))
+    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.test_batch_size)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, sampler=test_sampler, collate_fn=Collection(args))
     logging.info("Start predict")
-    parameter_list = utils.get_parameter()
+    parameter_list = utils.get_CPM_parameter()
     continue_list = []
-    args.output += f"_batch{args.batch_size}"
+    args.output += f"_batch{args.test_batch_size}"
+    args.step = 0
     with torch.no_grad():
         for idx, parameter in enumerate(parameter_list):
             if idx in continue_list:
@@ -342,6 +375,7 @@ if __name__ == "__main__":
     utils.set_seed(959794)
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
+        args.output = '/'.join([args.output, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)
     if args.predict:
         args.output = '/'.join([args.output, utils.d2s(datetime.datetime.now(), time=True)])

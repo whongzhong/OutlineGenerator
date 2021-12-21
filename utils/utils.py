@@ -303,6 +303,125 @@ def get_parameter():
     return parameter_list
 
 
+def get_CPM_parameter():
+    parameter_list = [
+        
+        {
+            "max_length": 512,
+            "min_length": 125,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin125Max512topP09K50"
+        },
+        {
+            "max_length": 512,
+            "min_length": 150,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin150Max512topP09K50"
+        },
+        {
+            "max_length": 512,
+            "min_length": 175,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin175Max512topP09K50"
+        },
+        {
+            "max_length": 512,
+            "min_length": 200,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin200Max512topP09K50"
+        },
+        {
+            "max_length": 525,
+            "min_length": 125,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin125Max525topP09K50"
+        },
+        {
+            "max_length": 550,
+            "min_length": 125,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin125Max550topP09K50"
+        },
+        {
+            "max_length": 575,
+            "min_length": 125,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin125Max575topP09K50"
+        },
+        {
+            "max_length": 575,
+            "min_length": 175,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 1,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "length_penalty": 1.0,
+            "no_repeat_ngram_size": 0,
+            "name": "permute_NoSampleModeMin175Max575topP09K50"
+        },
+        
+    ]
+    return parameter_list
+
 def get_train_parameter():
     return {
         "max_length": 512,

@@ -9,6 +9,7 @@ import math
 import json
 import torch.distributed as dist
 import re
+import os
 
 from apex import amp
 
@@ -187,41 +188,57 @@ def Order_train(train_iter, valid_iter, model, tokenizer, args):
 def Base_predict(test_iter, model, tokenizer, args):
     model.eval()
     predict_logits = []
+    truncate_inputs = []
     predicts = []
     parameter = args.parameter
     for item in test_iter:
+        base_len = 0
+        if args.CPM:
+            length_idx = [0]
+            for sample in item['input_ids']:
+                try:
+                    length_idx.append(sample.tolist().index(args.pad_id))
+                except ValueError:
+                    None
+            base_len = max(length_idx)
+        current_inputs = item["input_ids"].to(args.device)
+        
         # if args.n_gpu > 1:
             # logit = model.module.generate(item["input_ids"].to(args.device), do_sample=False, top_p=0.9, min_length=200, max_length=512)
         # else:
             # logit = model.generate(item["input_ids"].to(args.device), do_sample=False, top_p=0.9, min_length=200, max_length=512)
         if args.n_gpu > 1:
-            logit = model.module.generate(item["input_ids"].to(args.device), max_length=parameter["max_length"], \
-                min_length=parameter["min_length"], do_sample=parameter["do_sample"], early_stopping=parameter["early_stopping"], \
+            logit = model.module.generate(current_inputs, max_length=parameter["max_length"] + base_len, \
+                min_length=parameter["min_length"] + base_len, do_sample=parameter["do_sample"], early_stopping=parameter["early_stopping"], \
                 num_beams=parameter["num_beams"], temperature=parameter["temperature"], top_k=parameter["top_k"], top_p=parameter["top_p"], \
                 length_penalty=parameter["length_penalty"], no_repeat_ngram_size=parameter["no_repeat_ngram_size"])
         else:
-            logit = model.module.generate(item["input_ids"].to(args.device), max_length=parameter["max_length"], \
-                min_length=parameter["min_length"], do_sample=parameter["do_sample"], early_stopping=parameter["early_stopping"], \
+            logit = model.module.generate(current_inputs, max_length=parameter["max_length"] + base_len, \
+                min_length=parameter["min_length"] + base_len, do_sample=parameter["do_sample"], early_stopping=parameter["early_stopping"], \
                 num_beams=parameter["num_beams"], temperature=parameter["temperature"], top_k=parameter["top_k"], top_p=parameter["top_p"], \
                 length_penalty=parameter["length_penalty"])
-        # predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
-        # utils.debug("predict", predict[0])
         batch_size, seq_len = logit.shape
-        pad = torch.tensor([0] * (batch_size * (512-seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
+        _, input_seq_len = current_inputs.shape
+
+        pad = torch.tensor([args.pad_id] * (batch_size * (800-seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
+        input_pad = torch.tensor([args.pad_id] * (batch_size * (800-input_seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
         predict_logits.append(torch.cat([logit, pad], dim=-1))
-        # predicts.extend(predict)
+        truncate_inputs.append(torch.cat([current_inputs, input_pad], dim=-1))
+        
+    truncate_inputs = utils.distributed_concat(torch.cat(truncate_inputs, dim=0), args.test_len)
     predictions = utils.distributed_concat(torch.cat(predict_logits, dim=0), args.test_len)
     
     
     special_token_flag = True
     if args.replace_name:
         special_token_flag = False
-    
     predicts = [tokenizer.decode(g, skip_special_tokens=special_token_flag, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in predictions]
+    
+    truncate_inputs = [tokenizer.decode(g, skip_special_tokens=special_token_flag, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in truncate_inputs]
     logging.info(f"predicts len: {len(predicts)}")
 
     if args.CPM:
-        predicts = [re.sub("*\[SEP\]", "", g) for g in predicts]
+        predicts = [g[len(ip):] for ip, g in zip(truncate_inputs, predicts)]
 
     if args.replace_name:
         new_predicts = []
@@ -237,15 +254,13 @@ def Base_predict(test_iter, model, tokenizer, args):
     if dist.get_rank() != 0:
         return
       
-    
     name = parameter["name"]    
-    with open(args.output + f"_{name}.txt", "w", encoding="utf-8") as f:
+    with open(args.output + f"_epoch{args.step}_{name}.jsonl", "w", encoding="utf-8") as f:
         for predict, outline in zip(predicts, args.outline):
             draw(f, {'story': predict, 'outline': outline})
-            
+   
         #for i in range(len(predicts)):
         #    f.write(predicts[i].strip()+"\n")
-    '''
     logging.info("Metrics Compare")
     res = metrics.base_compare(args.gold, predicts, args.outline)
     overall = metrics.overall_compare(res)
@@ -256,22 +271,21 @@ def Base_predict(test_iter, model, tokenizer, args):
         logging.info("{}: {:.4f}".format(k, v))
         
     with open(args.ans_list, "a", encoding="utf-8") as f:
-        # for i in range(len(predicts)):
-        #     mp = {
-        #         "outline": args.outline[i],
-        #         "gold": args.gold[i],
-        #         "predicts": predicts[i]
-        #     }
-        #     draw(f, mp)
+        for i in range(len(predicts)):
+            mp = {
+                "outline": args.outline[i],
+                "gold": args.gold[i],
+                "predicts": predicts[i]
+            }
+            draw(f, mp)
             # f.write("outline: " + utils.list2str(args.outline[i]) + "\n")
             # f.write("gold:\n")
             # f.write(args.gold[i]+"\n")
             # f.write("predict:\n")
             # f.write(predicts[i]+"\n")
             # f.write("-----------------------------------------------\n")
-        res["path"] = args.output + f"_{name}.txt"
+    #    res["path"] = args.output + f"_{name}.txt"
         draw(f, res)
-    '''
 
 def Base_valid(valid_iter, model, tokenizer, args):
     model.eval()
@@ -297,8 +311,8 @@ def Base_valid(valid_iter, model, tokenizer, args):
         batch_size, seq_len = logit.shape
         _, input_seq_len = current_inputs.shape
 
-        pad = torch.tensor([0] * (batch_size * (512-seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
-        input_pad = torch.tensor([0] * (batch_size * (512-input_seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
+        pad = torch.tensor([0] * (batch_size * (600-seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
+        input_pad = torch.tensor([0] * (batch_size * (600-input_seq_len)), dtype=torch.long).reshape(batch_size, -1).to(args.device)
         predict_logits.append(torch.cat([logit, pad], dim=-1))
         truncate_inputs.append(torch.cat([current_inputs, input_pad], dim=-1))
         # predict = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False).replace(" ","").replace("[unused1]", "") for g in logit]
@@ -331,17 +345,16 @@ def Base_valid(valid_iter, model, tokenizer, args):
     
     if dist.get_rank() != 0:
         return
-
     logging.info("Metrics Compare")
     res = metrics.base_compare(args.gold, predicts, args.outline)
     overall = metrics.overall_compare(res)
     res["overall"] = overall
     for k, v in res.items():
         logging.info("{}: {:.4f}".format(k, v))
-    if args.deep_speed:
-        model.save_checkpoint(args.model_save, args.step)
-    else:
-        save(model, args.model_save, args.step)
+    #if args.deep_speed:
+    #    model.save_checkpoint(args.model_save, args.step)
+    #else:
+    save(model, args.model_save, args.step)
     with open(args.model_save + f"_epoch{args.step}.txt", "w", encoding="utf-8") as f:
         for i in range(len(predicts)):
             f.write(predicts[i].strip()+"\n")
@@ -362,7 +375,7 @@ def Base_valid(valid_iter, model, tokenizer, args):
         draw(f, res)
 
 
-def Base_train(train_iter, valid_iter, model, tokenizer, args):
+def Base_train(train_iter, valid_iter, test_iter, model, tokenizer, args):
     no_decay = ["bias", "LayerNorm.weight"]
     high_lr = ["lm_head"]
     optimizer_grouped_parameters = [
@@ -395,7 +408,7 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
     ]
     optimizer = AdamW(optimizer_grouped_parameters, args.learning_rate, correct_bias=False)
     if args.cos_lr:
-        scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
+        scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step, num_cycles=3)
     else:
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
     mean_loss = 0
@@ -419,10 +432,11 @@ def Base_train(train_iter, valid_iter, model, tokenizer, args):
         mean_loss = 0
         # if dist.get_rank() == 0:
         with torch.no_grad():
-            Base_valid(valid_iter, model, tokenizer, args)
+            #Base_valid(valid_iter, model, tokenizer, args)
+            Base_predict(test_iter, model, tokenizer, args)
 
 
-def CPM_train(train_iter, valid_iter, model, tokenizer, args, optimizer):
+def CPM_train(train_iter, valid_iter, test_iter, model, tokenizer, args, optimizer):
 
     mean_loss = 0
     for step in range(args.epoch):
@@ -458,6 +472,7 @@ def CPM_train(train_iter, valid_iter, model, tokenizer, args, optimizer):
         # if dist.get_rank() == 0:
         with torch.no_grad():
             Base_valid(valid_iter, model, tokenizer, args)
+            Base_predict(test_iter, model, tokenizer, args)
 
 def Rewrite_valid(valid_iter, model, tokenizer, args):
     model.eval()

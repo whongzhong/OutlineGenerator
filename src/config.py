@@ -92,6 +92,7 @@ def Base_config():
     parser.add_argument("--CPM", action="store_true", default=False)
     parser.add_argument("--deepspeed_config", type=str, default=None)
     parser.add_argument("--deep_speed", action="store_true", default=False)
+    parser.add_argument("--test_batch_size", type=int, default=6)
     
     args = parser.parse_args()
     

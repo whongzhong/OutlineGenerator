@@ -210,17 +210,25 @@ def main(args):
     valid_dataset = BaseDataset(valid_data, tokenizer, args)
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     valid_sampler = utils.SequentialDistributedSampler(valid_dataset, args.batch_size)
+    
+    
+    test_data = prepare_examples(args.test_path, args)
+    test_dataset = BaseDataset(test_data, tokenizer, args)
+    args.test_len = len(test_dataset)
+    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.batch_size)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, sampler=test_sampler, collate_fn=Collection(args))
+    
     args.valid_len = len(valid_dataset)
     # test_dataset = BaseDataset(test_data, tokenizer)
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=Collection(args))
-    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.batch_size, sampler=valid_sampler, collate_fn=Collection(args))
+    valid_iter = torch.utils.data.DataLoader(valid_dataset, batch_size=args.test_batch_size, sampler=valid_sampler, collate_fn=Collection(args))
     # test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=Collection(args))
     logging.info("Start Training")
     
     args.parameter = utils.get_train_parameter()
     
-    Base_train(train_iter, valid_iter, model, tokenizer, args)
+    Base_train(train_iter, valid_iter, test_iter, model, tokenizer, args)
 
 
 def predict(args):
@@ -269,8 +277,8 @@ def predict(args):
     args.pad_id = tokenizer.pad_token_id
     test_dataset = BaseDataset(test_data, tokenizer, args)
     args.test_len = len(test_dataset)
-    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.batch_size)
-    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, sampler=test_sampler, collate_fn=Collection(args))
+    test_sampler = utils.SequentialDistributedSampler(test_dataset, args.test_batch_size)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, sampler=test_sampler, collate_fn=Collection(args))
     logging.info("Start predict")
     parameter_list = utils.get_parameter()
     continue_list = []
@@ -290,6 +298,7 @@ if __name__ == "__main__":
     utils.set_seed(959794)
     if args.train:
         args.model_save = '/'.join([args.model_save, utils.d2s(datetime.datetime.now(), time=True)])
+        args.output = '/'.join([args.output, utils.d2s(datetime.datetime.now(), time=True)])
         main(args)
     if args.predict:
         args.output = '/'.join([args.output, utils.d2s(datetime.datetime.now(), time=True)])

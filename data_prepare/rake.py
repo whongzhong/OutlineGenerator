@@ -1,10 +1,152 @@
+import json
+import re
+import os
 import jieba
 import jieba.posseg as pseg
+import nltk
+import random
+import numpy as np
+from nltk.tokenize import WordPunctTokenizer
 import operator
-import json
 from collections import Counter
- 
- 
+
+#--------------------------------------------------------------------rakeen
+def is_number(s):
+    try:
+        float(s) if '.' in s else int(s)
+        return True
+    except ValueError:
+        return False
+
+def load_stop_words(stop_word_file):
+    """
+    Utility function to load stop words from a file and return as a list of words
+    @param stop_word_file Path and file name of a file containing stop words.
+    @return list A list of stop words.
+    """
+    stop_words = []
+    for line in open(stop_word_file):
+        if line.strip()[0:1] != "#":
+            for word in line.split():  # in case more than one per line
+                stop_words.append(word)
+    return stop_words
+
+def separate_words(text, min_word_return_size):
+    """
+    Utility function to return a list of all words that are have a length greater than a specified number of characters.
+    @param text The text that must be split in to words.
+    @param min_word_return_size The minimum no of characters a word must have to be included.
+    """
+    splitter = re.compile('[^a-zA-Z0-9_\\+\\-/]')
+    words = []
+    for single_word in splitter.split(text):
+        current_word = single_word.strip().lower()
+        #leave numbers in phrase, but don't count as words, since they tend to invalidate scores of their phrases
+        if len(current_word) > min_word_return_size and current_word != '' and not is_number(current_word):
+            words.append(current_word)
+    return words
+
+def split_sentences(text):
+    """
+    Utility function to return a list of sentences.
+    @param text The text that must be split in to sentences.
+    """
+    sentence_delimiters = re.compile(u'[.!?,;:\t\\\\"\\(\\)\\\'\u2019\u2013]|\\s\\-\\s')
+    sentences = sentence_delimiters.split(text)
+    return sentences
+
+def build_stop_word_regex(stop_word_file_path):
+    stop_word_list = load_stop_words(stop_word_file_path)
+    stop_word_regex_list = []
+    for word in stop_word_list:
+        word_regex = r'\b' + word + r'(?![\w-])'  # added look ahead for hyphen
+        stop_word_regex_list.append(word_regex)
+    stop_word_pattern = re.compile('|'.join(stop_word_regex_list), re.IGNORECASE)
+    return stop_word_pattern
+
+def generate_candidate_keywords(sentence_list, stopword_pattern):
+    phrase_list = []
+    for s in sentence_list:
+        tmp = re.sub(stopword_pattern, '|', s.strip())
+        phrases = tmp.split("|")
+        for phrase in phrases:
+            phrase = phrase.strip().lower()
+            if phrase != "":
+                phrase_list.append(phrase)
+    return phrase_list
+
+def calculate_word_scores(phraseList):
+    word_frequency = {}
+    word_degree = {}
+    for phrase in phraseList:
+        word_list = separate_words(phrase, 0)
+        word_list_length = len(word_list)
+        word_list_degree = word_list_length - 1
+        #if word_list_degree > 3: word_list_degree = 3 #exp.
+        for word in word_list:
+            word_frequency.setdefault(word, 0)
+            word_frequency[word] += 1
+            word_degree.setdefault(word, 0)
+            word_degree[word] += word_list_degree  #orig.
+            #word_degree[word] += 1/(word_list_length*1.0) #exp.
+    for item in word_frequency:
+        word_degree[item] = word_degree[item] + word_frequency[item]
+
+    # Calculate Word scores = deg(w)/frew(w)
+    word_score = {}
+    for item in word_frequency:
+        word_score.setdefault(item, 0)
+        word_score[item] = word_degree[item] / (word_frequency[item] * 1.0)  #orig.
+    #word_score[item] = word_frequency[item]/(word_degree[item] * 1.0) #exp.
+    return word_score
+
+def generate_candidate_keyword_scores(phrase_list, word_score):
+    keyword_candidates = {}
+    for phrase in phrase_list:
+        keyword_candidates.setdefault(phrase, 0)
+        word_list = separate_words(phrase, 0)
+        candidate_score = 0
+        for word in word_list:
+            candidate_score += word_score[word]
+        if len(word_list)>8:
+            continue
+        keyword_candidates[phrase] = candidate_score
+    return keyword_candidates
+
+class Rake(object):
+    def __init__(self, stop_words_path):
+        self.stop_words_path = stop_words_path
+        self.__stop_words_pattern = build_stop_word_regex(stop_words_path)
+
+    def run(self, text):
+        sentence_list = split_sentences(text)
+
+        phrase_list = generate_candidate_keywords(sentence_list, self.__stop_words_pattern)
+
+        word_scores = calculate_word_scores(phrase_list)
+
+        keyword_candidates = generate_candidate_keyword_scores(phrase_list, word_scores)
+
+        sorted_keywords = sorted(keyword_candidates.items(), key=operator.itemgetter(1), reverse=True)
+        return sorted_keywords
+
+def rakeen(text):
+    # Split text into sentences
+    sentenceList = split_sentences(text)
+    #stoppath = "FoxStoplist.txt" #Fox stoplist contains "numbers", so it will not find "natural numbers" like in Table 1.1
+    stoppath = "SmartStoplist.txt"  #SMART stoplist misses some of the lower-scoring keywords in Figure 1.5, which means that the top 1/3 cuts off one of the 4.0 score words in Table 1.1
+    stopwordpattern = build_stop_word_regex(stoppath)
+
+    # generate candidate keywords
+    phraseList = generate_candidate_keywords(sentenceList, stopwordpattern)
+
+    # calculate individual word scores
+    wordscores = calculate_word_scores(phraseList)
+
+    rake = Rake("SmartStoplist.txt")
+    keywords = rake.run(text)
+    return keywords
+#-----------------------------------------------------------------rakezh
 # Data structure for holding data
 class Word():
     def __init__(self, char, freq = 0, deg = 0):
@@ -27,7 +169,9 @@ class Word():
  
     def getFreq(self):
         return self.freq
- 
+    
+    def getDeg(self):
+        return self.deg
 # Check if contains num
 def notNumStr(instr):
     for item in instr:
@@ -56,20 +200,16 @@ def readSingleTestCases(testFile):
             returnString += item['statement']
     return returnString
  
-def run(rawText):
-    # Construct Stopword Lib
-    swLibList = [line.rstrip('\n') for line in open("/users10/lyzhang/Datasets/stopwords/scu_stopwords.txt",'r',encoding='utf-8')]
-    # Construct Phrase Deliminator Lib
-    conjLibList = [line.rstrip('\n') for line in open("/users10/lyzhang/Datasets/stopwords/scu_stopwords.txt",'r',encoding='utf-8')]
- 
+def rakezh(rawText, swLibList, conjLibList):
     # Cut Text
     rawtextList = pseg.cut(rawText)
- 
+    
     # Construct List of Phrases and Preliminary textList
     textList = []
     listofSingleWord = dict()
     lastWord = ''
-    poSPrty = ['m','x','uj','ul','mq','u','v','f']
+    #poSPrty = ['m','x','uj','ul','mq','u','v','f']
+    poSPrty = ['m','x','uj','ul','mq','u','f']
     meaningfulCount = 0
     checklist = []
     for eachWord, flag in rawtextList:
@@ -84,7 +224,7 @@ def run(rawText):
             if eachWord not in listofSingleWord:
                 listofSingleWord[eachWord] = Word(eachWord)
             lastWord = ''
- 
+    
     # Construct List of list that has phrases as wrds
     newList = []
     tempList = []
@@ -94,7 +234,14 @@ def run(rawText):
         else:
             newList.append(tempList)
             tempList = []
- 
+    r'''
+    print('newlist',newList)
+    print(rawText)
+    gg=[]
+    for i,j in rawtextList:
+        gg.append(i)
+    print(gg)
+    '''
     tempStr = ''
     for everyWord in textList:
         if everyWord != '|':
@@ -113,15 +260,14 @@ def run(rawText):
         phraseKey = res[:-1]
         if phraseKey not in listofSingleWord:
             listofSingleWord[phraseKey] = Word(phraseKey)
-        else:
+        elif len(everyPhrase)>1:
             listofSingleWord[phraseKey].updateFreq()
- 
     # Get score for entire Set
     outputList = dict()
+    #print('newList',newList)
     for everyPhrase in newList:
- 
-        # if len(everyPhrase) > 5:
-        #     continue
+        if len(everyPhrase) > 8:
+            continue
         score = 0
         phraseString = ''
         outStr = ''
@@ -131,17 +277,198 @@ def run(rawText):
             outStr += everyWord
         phraseKey = phraseString[:-1]
         freq = listofSingleWord[phraseKey].getFreq()
-        # if freq / meaningfulCount < 0.01 and freq < 3 :
-        #     continue
-        if len(outStr) <= 2:
+        if meaningfulCount==0:
             continue
+        #if freq / meaningfulCount < 0.01 and freq < 2 :
+        #if freq < 2 :
+        #    continue
         outputList[outStr] = score
  
     sorted_list = sorted(outputList.items(), key = operator.itemgetter(1), reverse = True)
-    return sorted_list[:10]
- 
-if __name__ == '__main__':
-    sentence = "王羽熙有绘画天赋，3岁开始学画，很快就画得“有模有样”但他对数字极不敏感，上高一时，王羽熙在一次满分为150分的数学测验中仅得了3分：只答对了一道选择题。这么一个严重偏科的孩子却能两次进入北京顶尖中学－－人大附中，这多少让人称奇。但他自己认为，这全是因为画。王羽熙六年级那年的寒假，父母抱着试试看的心理给人大附中的刘彭芝校长打了一个电话。到了学校，刘校长让他现场画一幅画，他画了一幅老虎。因为这一次现场考核，王羽熙顺利地进入了人大附中。初中毕业时，因为理科成绩较差，王羽熙到了其他学校，但他不快乐。后来他妈妈拿着他的《新游记》的漫画书稿再一次找到了刘校长，刘校长认为像他这样的孩子更需要一个宽松、宽容的学习环境。就这样，王羽熙又回到了人大附中。一个偏科生能两次进入人大附中，确实挺幸运，但是只有幸运是不够的，还要有真本事。当别的孩子在玩的时候，王羽熙通常只做两件事：看《西游记》和画画。他对《西游记》的痴迷近乎狂热，他的第一套漫画书就是由《西游记》改编的。因为画画，他的手握笔的地方和与纸张经常接触的地方都有着厚厚的老茧。其实，高中三年对王羽熙的成长至关重要，因为在这三年里，他的收获颇多。高一下半学期，王羽熙开始在班里策划和执导英语剧《魔戒》，学期末，他们就在全校师生面前演出了一次。但王羽熙自己却认为那次准备得太仓促了，想重新准备再演一次。“重新演一次”，说起来容易但实际操作难度很大：要说服学校和老师，要说服学校再安排演出时间、再批礼堂。王羽熙带领同学最终搞定了所有事情。高二时，二次上演的《魔戒》获得了极大的成功。而《魔戒》的成功，也使王羽熙找到了电影美术这样一条更适合自己发展的道路。无论梦想有多么美好，高考仍然是王羽熙必须跨越的一个高台。虽然王羽熙认为，作为学生应该经历自己必须经历的考验，同时还要尽力做好。但对他这样一个偏科严重的孩子来说，高考前夕的压力还是可想而知的。那时，连一向支持他画画的妈妈也开始给他加压，不允许他画画了，让他把省出来的时间用来学数学。可见，当这个决定他命运的关键点出现时，父母承受的压力也到了极限。好在王羽熙不是一个轻言放弃的人。在他自己的努力下，在老师和同学的帮助下，王羽熙的高考数学成绩突破了个位数：33分。这对他来说已经是很不错的成绩了。而后王羽熙考上了大学，在大学里他的才华展现得淋漓尽致。3年前，大学还没毕业的他，参加了北京奥运会开幕式的部分动画制作；还是3年前，他作为唯一的学生代表参加了法国电影节。现在25岁的王羽熙，是一家广告公司的股东。他有一个自己的5年计划：用一两年的时间体验当老板的滋味，再之后的两三年里潜心增进绘画技艺，到他30岁的时候，进入迪斯尼那样世界顶尖的动漫公司。"
-    print(sentence)
-    result = run(sentence)
-    print(result)
+    #return sorted_list[:10]
+    return sorted_list
+
+punczh=['。','，','！','？','…','：']
+puncen=['.',',','!','?',':']
+
+def ispunczh(word):
+    for i in punczh:
+        if word==i:
+            return True
+    return False
+
+def ispuncen(word):
+    for i in puncen:
+        if word==i:
+            return True
+    return False
+
+def isen(word):
+    return ('a'<=word<='z') or ('A'<=word<='Z')
+
+def iszh(word):
+    return ('\u4e00'<= word <= '\u9fa5')
+
+def strB2Q(ustring):
+    """半角转全角"""
+    rstring = ""
+    for uchar in ustring.replace("...", "…"):
+        inside_code=ord(uchar)
+        if uchar in punctuation:
+            if inside_code == 32:
+                inside_code = 12288
+            elif inside_code >= 32 and inside_code <= 126:
+                inside_code += 65248
+        rstring += chr(inside_code)
+    return rstring
+
+def repetition_distinct(name, cands):
+    result = {}
+    tgt_dir = "./lex_rept/%s"%(name.split("/")[0])
+    if ("/" in name) and (not os.path.exists(tgt_dir)):
+        os.mkdir(tgt_dir)
+    fout = open("./lex_rept/%s.txt"%name, "w")
+    for i in range(1, 5):
+        num, all_ngram, all_ngram_num = 0, {}, 0.
+        for k, cand in enumerate(cands):
+            ngs = ["_".join(c) for c in ngrams(cand, i)]
+            all_ngram_num += len(ngs)
+            for s in ngs:
+                if s in all_ngram:
+                    all_ngram[s] += 1
+                else:
+                    all_ngram[s] = 1
+            for s in set(ngs):
+                if ngs.count(s) > 1:
+                    if i == 4: fout.write("%d|||%s|||%s\n"%(k, s, " ".join(cand)))
+                    num += 1
+                    break
+        result["repetition-%d"%i] = "%.4f"%(num / float(len(cands)))
+        result["distinct-%d"%i] = "%.4f"%(len(all_ngram) / float(all_ngram_num))
+    fout.close()
+    return result
+
+def judgezh(k):
+    if k=="？" or k=="！" or k=="“" or k=="”" or k=="：" or k=="；" or k=="。":
+        return 0
+    return (k>='\u4e00' and k<='\u9fff')
+
+def judgeen(k):
+    if k=="?" or k=="!" or k=="\"" or k==":" or k==";" or k==".":
+        return 0
+    return ('a'<=k<='z') or ('A'<=k<='Z')
+
+def addvocab(vocab,text):
+    for i in text:
+        vocab[i]=1
+    return vocab
+
+def swap(t1,t2):
+    return t2,t1
+
+def extractzh(text,num,rate, swLibList, conjLibList):
+    temp=rakezh(text, swLibList, conjLibList)
+    all_keywords = temp
+    keywords=[]
+    tot=0
+    for j in temp:
+        j=list(j)
+        if j[1]>1:
+            flag=0
+            for k in keywords:
+                if re.search(j[0],k,re.M) is not None:
+                    flag=1
+                    break
+            if flag==1:
+                continue
+            for k in range(len(keywords)-1,-1,-1):
+                if re.search(keywords[k],j[0],re.M) is not None:
+                    keywords=keywords[:k]+keywords[k+1:]
+            keywords.append(j[0])
+            tot+=1
+            if tot>num - 1:
+                break
+    if tot<num:
+        for j in range(1,num+1):
+            if tot==j:
+                temp=temp[j:]
+                break
+        random.shuffle(temp)
+        while tot<num and len(temp)>0:
+            if len(temp[0][0])>0:
+                keywords.append(temp[0][0])
+                tot+=1
+            temp=temp[1:]
+    temp=0
+    l=len(text)
+    k=temp/l
+    if k>rate:
+        while k>rate:
+            keywords=keywords[:-1]
+            temp=0
+            for j in keywords:
+                    temp+=len(jieba.lcut(j))
+            k=temp/l
+    return (keywords, all_keywords)
+
+def extracten(text,num,rate):
+    #text=WordPunctTokenizer().tokenize(text)
+    temp=rakeen(text)
+    all_keywords = temp
+    keywords=[]
+    tot=0
+    for j in temp:
+        j=list(j)
+        if j[1]>1:
+            flag=0
+            for k in keywords:
+                if re.search(j[0],k,re.M) is not None:
+                    flag=1
+                    break
+            if flag==1:
+                continue
+            for k in range(len(keywords)-1,-1,-1):
+                if re.search(keywords[k],j[0],re.M) is not None:
+                    keywords=keywords[:k]+keywords[k+1:]
+            keywords.append(j[0])
+            tot+=1
+            if tot>7:
+                break
+    if tot<num:
+        for j in range(1,num+1):
+            if tot==j:
+                temp=temp[j:]
+                break
+        random.shuffle(temp)
+        while tot<num and len(temp)>0:
+            if len(temp[0][0])>0:
+                keywords.append(temp[0][0])
+                tot+=1
+            temp=temp[1:]
+    temp=0
+    for j in keywords:
+        temp+=len(WordPunctTokenizer().tokenize(j))
+    l=len(WordPunctTokenizer().tokenize(text))
+    #l=len(text)
+    k=temp/l
+    if k>rate:
+        while k>rate:
+            keywords=keywords[:-1]
+            temp=0
+            for j in keywords:
+                temp+=len(WordPunctTokenizer().tokenize(j))
+            k=temp/l
+    return (keywords, all_keywords)
+
+
+if __name__=='__main__':
+    debug=0
+    a='A dog, to whom the butcher had thrown a bone, was hurrying home with his prize as fast as he could go. As he crossed a narrow footbridge, he happened to look down and saw himself reflected in the quiet water as if in a mirror. But the greedy dog thought he saw a real dog carrying a bone much bigger than his own. If he had stopped to think he would have known better. But instead of thinking, he dropped his bone and sprang at the dog in the river, only to find himself swimming for dear life to reach the shore. At last he managed to scramble out, and as he stood sadly thinking about the good bone he had lost, he realized what a stupid dog he had been.'
+    b='蛇和鹰互相交战，斗得难解难分。蛇紧紧地缠住了鹰，农夫看见了，便帮鹰解开了蛇，使鹰获得了自由。蛇因此十分气愤，便在农夫的水杯里放了毒药。当不知情的农夫端起杯子正准备喝水时，鹰猛扑过来撞掉了农夫手中的水杯。'
+    #print(extracten(a,5,0.25))
+    
+    # Construct Stopword Lib
+    swLibList = [line.rstrip('\n') for line in open(r"/users1/whzhong/code/OutlineGenerator/data/stoplist/sp.txt",'r',encoding='utf-8')]
+    # Construct Phrase Deliminator Lib
+    conjLibList = [line.rstrip('\n') for line in open(r"/users1/whzhong/code/OutlineGenerator/data/stoplist/spw.txt",'r',encoding='utf-8')]
+    print(extractzh(b,2,0.25, swLibList, conjLibList))
