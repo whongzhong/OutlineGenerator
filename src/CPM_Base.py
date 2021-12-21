@@ -209,7 +209,7 @@ def main(args):
     args.n_gpu = torch.cuda.device_count()
     utils.debug("tokenizer", args.tokenizer_path)
     utils.debug("pretrain", args.pretrain_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    tokenizer = CpmTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
     if args.model_load:
@@ -246,7 +246,6 @@ def main(args):
     logging.info(f"gpu num:{args.n_gpu}")
     # DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
     logging.info(f"local rank:{args.local_rank}")
-    model = model.to(args.device)
     
     optimizer = get_optimizer(args, model)
     #model, optimizer = amp.initialize(model, optimizer, opt_level="O2")
@@ -286,6 +285,7 @@ def main(args):
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=len(train_iter) // args.opt_step, num_training_steps=len(train_iter) * args.epoch // args.opt_step)
         
     
+    model = model.to(args.device)
     model, optimizer, _, _ = deepspeed.initialize(args=args,
                                                      model=model,
                                                      model_parameters=model.parameters(),
@@ -315,7 +315,7 @@ def predict(args):
     args.n_gpu = torch.cuda.device_count()
     utils.debug("tokenizer", args.tokenizer_path)
     utils.debug("pretrain", args.pretrain_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    tokenizer = CpmTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
     # tokenizer = BartTokenizer.from_file(args.tokenizre_path)
     #model = deepspeed.DeepSpeedEngine.load_checkpoint(load_dir=args.model_load)

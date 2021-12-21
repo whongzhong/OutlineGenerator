@@ -11,8 +11,6 @@ import torch.distributed as dist
 import re
 import os
 
-from apex import amp
-
 def save(model, path, step):
     # if dist.get_rank() == 0:
     path += "_epoch{}.pkl".format("{}".format(step))
